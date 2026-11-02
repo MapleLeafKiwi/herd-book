@@ -18,19 +18,25 @@
 const SIGNUP_CODE = 'CHANGE-ME';   // give this only to people allowed to start a ranch
 const NEW_RANCHES_ACTIVE = true;        // false = new ranches wait until you tick "Active" in the Ranches tab
 
-const TABS = { animals: 'Animals', exposures: 'Bull exposures', collars: 'Collars', history: 'Change log' };
+const TABS = { animals: 'Animals', exposures: 'Bull exposures', collars: 'Collars', treatments: 'Treatments', preg: 'Breeding records', expenses: 'Expenses', history: 'Change log' };
 const ORDER = {
-  animals:   ['id','collar','kind','group','brand1','brand2','collarOn','notes','purchasePrice','purchaseDate','salePrice','saleDate','createdAt','updatedAt','updatedBy'],
+  animals:   ['id','collar','kind','group','brand1','brand2','vid','eid','breed','birthDate','collarOn','notes','purchasePrice','purchaseDate','salePrice','saleDate','damId','createdAt','updatedAt','updatedBy'],
   exposures: ['id','bullId','group','cowIds','start','end','note','updatedAt','updatedBy'],
-  collars:   ['id','number','status','note','createdAt','updatedAt','updatedBy'],
+  collars:   ['id','number','neckband','status','note','createdAt','updatedAt','updatedBy'],
+  treatments:['id','date','product','kind','dose','route','withdrawalDays','boosterDue','batch','givenBy','group','animalIds','cost','notes','updatedAt','updatedBy'],
+  preg:      ['id','cowId','type','date','result','daysPregnant','calfSex','calfId','notes','updatedAt','updatedBy'],
+  expenses:  ['id','date','category','description','group','amount','updatedAt','updatedBy'],
   history:   ['id','at','by','action','text','targetType','targetId','changes']
 };
-const NUM  = ['purchasePrice','salePrice','createdAt','updatedAt','at','_rev'];
+const NUM  = ['purchasePrice','salePrice','createdAt','updatedAt','at','_rev','withdrawalDays','cost','amount','daysPregnant'];
 const BOOL = ['collarOn','_deleted'];
-const JSONF = ['cowIds','changes'];
+const JSONF = ['cowIds','changes','animalIds'];
 const RANCH_HEAD = ['Ranch', 'Ranch code', 'Crew code', 'Active', 'Sheet', 'Started by', 'Started', 'Sheet ID'];
 // Crew phones (crew code) never receive or change these.
 const FIN = ['purchasePrice', 'purchaseDate', 'salePrice', 'saleDate'];
+const CREW_HIDE = { animals: FIN, treatments: ['cost'] };       // fields crew never see
+const CREW_BLOCK = ['expenses'];                                 // tabs crew never see or change
+const MONEY_F = FIN.concat(['cost', 'amount']);
 const WORDS = ['tag','calf','bale','gate','chute','creek','range','ridge','corral','spur','prairie','hay','brand','rope','yard','herd','bull','heifer','saddle','fence','cedar','willow','aspen','badger','coulee','butte','sage','stone','river','meadow'];
 
 function doGet() { return out_({ ok: true, app: 'Herd Book sync' }); }
@@ -109,12 +115,16 @@ function lookup_(code) {
 }
 // Remove prices from everything a crew phone receives.
 function forCrew_(col, o) {
+  if (CREW_BLOCK.indexOf(col) >= 0) return null;
   if (col === 'animals') {
     o.sold = !!(o.saleDate || (o.salePrice !== '' && o.salePrice != null));
     FIN.forEach(k => delete o[k]);
+  } else if (CREW_HIDE[col]) {
+    CREW_HIDE[col].forEach(k => delete o[k]);
   } else if (col === 'history') {
+    if (o.targetType === 'expense') return null;
     const had = (o.changes || []).length;
-    o.changes = (o.changes || []).filter(c => FIN.indexOf(c.f) < 0);
+    o.changes = (o.changes || []).filter(c => MONEY_F.indexOf(c.f) < 0);
     if (had && !o.changes.length) return null;                  // a price-only edit: crew don't see it at all
   }
   return o;
@@ -140,9 +150,11 @@ function sync_(body) {
     rev = Math.max(Date.now(), rev + 1);
     ops.forEach(op => {
       if (!op || !TABS[op.col] || !op.id) return;
-      if (crew) {                                              // crew can't change prices, even by crafting a request
-        [op.patch, op.base].forEach(o => { if (o && typeof o === 'object') { FIN.forEach(k => delete o[k]); delete o.sold; } });
-        if (op.col === 'history' && op.patch && Array.isArray(op.patch.changes)) op.patch.changes = op.patch.changes.filter(c => c && FIN.indexOf(c.f) < 0);
+      if (crew) {                                              // crew can't see or change money, even by crafting a request
+        if (CREW_BLOCK.indexOf(op.col) >= 0) return;
+        const hide = CREW_HIDE[op.col] || [];
+        [op.patch, op.base].forEach(o => { if (o && typeof o === 'object') { hide.forEach(k => delete o[k]); delete o.sold; } });
+        if (op.col === 'history' && op.patch && Array.isArray(op.patch.changes)) op.patch.changes = op.patch.changes.filter(c => c && MONEY_F.indexOf(c.f) < 0);
       }
       apply_(table(op.col), op, rev, conflicts, crew);
     });
@@ -159,7 +171,7 @@ function sync_(body) {
     if (crew) changes[col] = changes[col].map(o => forCrew_(col, o)).filter(Boolean);
   });
   const out = { ok: true, ranch: ranch.name, role: found.role, rev: rev, changes: changes,
-    conflicts: crew ? conflicts.filter(c => FIN.indexOf(c.field) < 0) : conflicts };
+    conflicts: crew ? conflicts.filter(c => MONEY_F.indexOf(c.field) < 0 && CREW_BLOCK.indexOf(c.col) < 0) : conflicts };
   if (!crew) {
     let crewCode = ranch.crew;
     if (!crewCode) { crewCode = newCode_(); ranchesSheet_().getRange(ranch.row, 3).setValue(crewCode); }
@@ -223,7 +235,7 @@ function apply_(t, op, rev, conflicts, crew) {
       return;
     }
   }
-  if (op.create) Object.keys(r).forEach(k => { if (k !== 'id' && !(crew && FIN.indexOf(k) >= 0)) r[k] = ''; });
+  if (op.create) Object.keys(r).forEach(k => { if (k !== 'id' && !(crew && (CREW_HIDE[t.col] || []).indexOf(k) >= 0)) r[k] = ''; });
   if (op.del) {
     r._deleted = 'true';
   } else {

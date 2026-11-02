@@ -1,6 +1,6 @@
 // Herd Book service worker: keeps the app on the phone so it opens with no signal.
-const CACHE = 'herdbook-v5';
-const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './qrcode.js'];
+const CACHE = 'herdbook-v6';
+const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './qrcode.js', './xlsx.mini.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

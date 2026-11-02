@@ -40,7 +40,7 @@ h1{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.02e
 .sync{font-size:13px;color:var(--muted)}
 nav{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
 nav a{flex:1;text-align:center;font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--muted);padding:8px 6px;border-radius:8px;white-space:nowrap}
-@media (max-width:440px){nav{gap:2px}nav a{font-size:14px;letter-spacing:0;padding:8px 4px;min-width:0;flex:1 1 auto}}
+@media (max-width:440px){nav{gap:2px}nav a{font-size:14px;letter-spacing:0;padding:8px 8px;flex:0 0 auto}}
 nav a[aria-current="page"]{background:var(--ink);color:var(--surface)}
 main{padding-block:16px 48px}
 section[data-view]{display:flex;flex-direction:column;gap:14px}
@@ -135,6 +135,21 @@ label.check input{width:24px;height:24px}
 .hrow{align-items:center}
 .hrow .sync{margin-left:auto}
 .sharebtn{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-weight:700;cursor:pointer}
+nav a{flex:1 0 auto}
+.warn-text{color:var(--warn);font-weight:700}
+.good-text{color:var(--ok);font-weight:700}
+.linkbtn{border:0;background:none;color:var(--focus);text-decoration:underline;cursor:pointer;font:inherit;padding:0 0 0 6px}
+.mtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.mtile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.mtile .mv{font-family:var(--display);font-weight:700;font-size:clamp(20px,6vw,28px);font-variant-numeric:tabular-nums}
+.mtile.good{border-color:var(--ok)}.mtile.good .mv{color:var(--ok)}
+.mtile.bad{border-color:var(--warn)}.mtile.bad .mv{color:var(--warn)}
+.tablewrap{overflow-x:auto;margin:0 -4px}
+.mtable{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+.mtable th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+.mtable td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.mtable tr[data-id],.mtable tr[data-exp]{cursor:pointer}
+.mtable .r{text-align:right;white-space:nowrap}
 .sync.off{color:var(--warn);font-weight:700}
 .conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
 .ro{margin-bottom:12px}
@@ -166,7 +181,9 @@ label.check input{width:24px;height:24px}
       <a href="#herd" data-tab="herd">Herd</a>
       <a href="#yard" data-tab="yard">Yard</a>
       <a href="#collars" data-tab="collars">Collars</a>
-      <a href="#bulls" data-tab="bulls">Bulls</a>
+      <a href="#breeding" data-tab="breeding">Breeding</a>
+      <a href="#health" data-tab="health">Health</a>
+      <a href="#money" data-tab="money" id="navMoney">Money</a>
       <a href="#log" data-tab="log">Log</a>
     </nav>
   </div>
@@ -182,6 +199,7 @@ label.check input{width:24px;height:24px}
       <button class="btn primary" id="addBtn" type="button">+ Add animal</button>
     </div>
     <div class="chips" id="groupChips"></div>
+    <div class="fab-row"><button class="btn" type="button" data-open-import>Import</button><button class="btn" type="button" data-open-export>Export / eShepherd</button></div>
     <label class="check small" style="min-height:0"><input id="showSold" type="checkbox" style="width:20px;height:20px"> Show sold animals</label>
     <div class="stats" id="stats"></div>
     <div id="herdList"></div>
@@ -215,9 +233,26 @@ label.check input{width:24px;height:24px}
     </div>
   </section>
 
-  <section data-view="bulls" hidden>
-    <div class="fab-row"><button class="btn primary" id="expBtn" type="button">+ Record bull with cows</button></div>
+  <section data-view="breeding" hidden>
+    <div class="fab-row"><button class="btn primary" id="expBtn" type="button">+ Record breeding</button><button class="btn" id="gestBtn" type="button">Gestation length</button></div>
+    <div class="small muted" id="gestNote"></div>
+    <div id="breedList" style="display:flex;flex-direction:column;gap:10px"></div>
+    <h2>Bulls</h2>
     <div id="bullList" style="display:flex;flex-direction:column;gap:12px"></div>
+  </section>
+
+  <section data-view="health" hidden>
+    <div class="bar">
+      <input id="hq" class="search" type="search" placeholder="Search product, animal, batch" autocomplete="off">
+      <button class="btn primary" id="treatBtn" type="button">+ Record treatment</button>
+    </div>
+    <div id="healthDue" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div id="healthList"></div>
+  </section>
+
+  <section data-view="money" hidden>
+    <div class="bar"><select id="mYear" style="flex:1 1 140px;width:auto"></select><select id="mGroup" style="flex:1 1 160px;width:auto"></select></div>
+    <div id="moneyBody" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
 
   <section data-view="log" hidden>
@@ -235,19 +270,10 @@ label.check input{width:24px;height:24px}
         </div>
       </details>
     </div>
-    <h2>Backup</h2>
+    <h2>Spreadsheets &amp; backup</h2>
     <div class="card">
-      <div class="small muted">Every change is saved on this phone first, then sent to the herd’s Google Sheet when there is signal. The sheet is your main backup. Download a copy now and then so you always have one of your own.</div>
-      <div class="fab-row">
-        <button class="btn" id="exportCsv" type="button">Download herd (CSV)</button>
-        <button class="btn" id="exportJson" type="button">Full backup (JSON)</button>
-      </div>
-      <div class="small muted">Load a spreadsheet: CSV with columns <b>collar, group, brand1, brand2, notes, type, purchase_price, purchase_date, sale_price, sale_date</b> (type = cow, heifer or bull; dates as YYYY-MM-DD).</div>
-      <div class="fab-row">
-        <label class="btn" for="importFile" id="importLabel" style="text-align:center">Import CSV</label>
-        <input id="importFile" type="file" accept=".csv,text/csv" hidden>
-      </div>
-      <div id="importMsg" class="small"></div>
+      <div class="small muted">Every change is saved on this phone first, then sent to the ranch’s Google Sheet when there is signal. The sheet is your main backup.</div>
+      <div class="fab-row"><button class="btn primary" type="button" data-open-import>Import spreadsheet</button><button class="btn" type="button" data-open-export>Export / eShepherd</button></div>
     </div>
     <h2>Recent changes</h2>
     <div id="logList"></div>

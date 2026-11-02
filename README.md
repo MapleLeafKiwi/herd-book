@@ -1,6 +1,6 @@
 # Herd Book
 
-Offline-first cattle tracker for one or many ranches: herd, collars, bulls, purchase and sale prices. Works with no signal and syncs to Google Sheets when it has signal.
+Offline-first cattle tracker for one or many ranches: herd, collars, breeding and calving windows, vaccines and treatments, money and expenses, spreadsheet import/export (including filling eShepherd's Bulk Create file). Works with no signal and syncs to Google Sheets when it has signal.
 
 - **App:** https://mapleleafkiwi.github.io/herd-book/ (open on a phone, then Add to Home Screen)
 - **Sync script:** `sheet-script/Code.gs` goes into a Google Sheet ("Herd Book admin") via Extensions › Apps Script, deployed as a web app (Execute as: Me, Who has access: Anyone). The real sign-up code is set only in the copy inside that sheet.

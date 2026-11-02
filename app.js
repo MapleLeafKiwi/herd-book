@@ -7,8 +7,9 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => new Date().toLocaleDateString('en-CA');
 const byCollar = (a,b) => String(a.collar||'~').localeCompare(String(b.collar||'~'), undefined, {numeric:true});
-const KIND = {cow:'Cow', heifer:'Heifer', bull:'Bull'};
+const KIND = {cow:'Cow', heifer:'Heifer', bull:'Bull', steer:'Steer', calf:'Calf'};
 const FIELDS = [['kind','Type'],['collar','Collar'],['group','Group'],['brand1','Brand'],['brand2','2nd brand'],['collarOn','Collar fitted'],['notes','Notes'],
+  ['vid','Visual tag (VID)'],['eid','EID / RFID'],['breed','Breed'],['birthDate','Date of birth'],
   ['purchasePrice','Purchase price'],['purchaseDate','Purchase date'],['salePrice','Sale price'],['saleDate','Sale date']];
 const MONEY = new Set(['purchasePrice','salePrice']);
 const DATES = new Set(['purchaseDate','saleDate']);
@@ -17,7 +18,7 @@ const parseMoney = v => { v=String(v||'').replace(/[$,\s]/g,''); if(v==='') retu
 const rid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 const canWrite = true;
 
-const S = { animals:new Map(), exposures:new Map(), collars:new Map(), cFilter:'all', history:[], loaded:true, tab:'herd', group:'', yGroup:'', yFilter:'need', showSold:false, lastSync:0 };
+const S = { animals:new Map(), exposures:new Map(), collars:new Map(), treatments:new Map(), expenses:new Map(), preg:new Map(), mYear:'', mGroup:'', cFilter:'all', history:[], loaded:true, tab:'herd', group:'', yGroup:'', yFilter:'need', showSold:false, lastSync:0 };
 
 // ---------- local storage ----------
 const LS = {
@@ -26,7 +27,8 @@ const LS = {
 };
 const K = { mirror:'herdbook.app.mirror', outbox:'herdbook.app.outbox', cfg:'herdbook.app.config' };
 const mirror = LS.get(K.mirror, {});
-mirror.animals = mirror.animals || {}; mirror.exposures = mirror.exposures || {}; mirror.collars = mirror.collars || {};
+const COLS = ['animals','exposures','collars','treatments','expenses','preg'];
+COLS.forEach(c=>{ mirror[c] = mirror[c] || {}; });
 mirror.history = mirror.history || []; mirror.rev = mirror.rev || 0;
 let outbox = LS.get(K.outbox, []);
 let conflicts = LS.get('herdbook.app.conflicts', []);
@@ -52,19 +54,17 @@ function saveMirror(){ clearTimeout(mirrorTimer); mirrorTimer=setTimeout(()=>{ m
 function saveOutbox(){ if(!LS.set(K.outbox,outbox)){ storageOk=false; toast('This phone is out of storage space. Get signal and sync before making more changes.'); } }
 
 function recompute(){
-  const an = {...mirror.animals}, ex = {...mirror.exposures}, co = {...mirror.collars}, pendingHist=[];
+  const cur = {}; COLS.forEach(c=>{ cur[c] = {...mirror[c]}; }); const pendingHist=[];
   for(const op of outbox){
     const [col,id] = op.path.split('/');
     if(col==='history'){ if(op.op==='set') pendingHist.push({...op.data, pending:true}); continue; }
-    const tgt = col==='animals'?an : col==='exposures'?ex : col==='collars'?co : null;
+    const tgt = cur[col] || null;
     if(!tgt) continue;
     if(op.op==='set') tgt[id]={...op.data};
     else if(op.op==='update'){ tgt[id]={...(tgt[id]||{}),...op.data}; }
     else if(op.op==='delete') delete tgt[id];
   }
-  S.animals = new Map(Object.entries(an).map(([id,d])=>[id,{...d,id}]));
-  S.exposures = new Map(Object.entries(ex).map(([id,d])=>[id,{...d,id}]));
-  S.collars = new Map(Object.entries(co).map(([id,d])=>[id,{...d,id}]));
+  COLS.forEach(c=>{ S[c] = new Map(Object.entries(cur[c]).map(([id,d])=>[id,{...d,id}])); });
   const seen = new Set();
   S.history = pendingHist.reverse().concat(mirror.history).filter(h=>{ if(!h.id) return true; if(seen.has(h.id)) return false; seen.add(h.id); return true; });
   renderAll(); updateSync(); renderConflictBar();
@@ -120,7 +120,7 @@ async function post(body){
 }
 function mergeChanges(ch){
   if(!ch) return;
-  ['animals','exposures','collars'].forEach(col=>(ch[col]||[]).forEach(r=>{
+  COLS.forEach(col=>(ch[col]||[]).forEach(r=>{
     const {id,_rev,_deleted,...rest} = r; if(!id) return;
     if(_deleted) delete mirror[col][id]; else mirror[col][id]=rest;
   }));
@@ -205,14 +205,16 @@ const collarHtml = (a, xl) => a.collar ? `<span class="collar${xl?' xl':''}">${e
 const brandsHtml = a => [a.brand1,a.brand2].filter(Boolean).map(b=>`<span class="brand">${esc(b)}</span>`).join(' ');
 function matches(a, q){
   if(!q) return true;
-  const hay = [a.collar,a.brand1,a.brand2,a.group,a.notes,KIND[a.kind]].join(' ').toLowerCase();
+  const hay = [a.collar,a.brand1,a.brand2,a.group,a.notes,KIND[a.kind],a.vid,a.eid,a.breed].join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(t=>hay.includes(t));
 }
 
 // ---------- tabs ----------
 function setTab(){
   const t = (location.hash||'#herd').slice(1);
-  S.tab = ['herd','yard','collars','bulls','log'].includes(t) ? t : 'herd';
+  S.tab = t==='bulls' ? 'breeding' : ['herd','yard','collars','breeding','health','money','log'].includes(t) ? t : 'herd';
+  if(S.tab==='money' && !fin()) S.tab='herd';
+  $('#navMoney').hidden = !fin();
   document.querySelectorAll('nav a').forEach(a=>a.setAttribute('aria-current', a.dataset.tab===S.tab?'page':'false'));
   document.querySelectorAll('section[data-view]').forEach(s=>s.hidden = s.dataset.view!==S.tab);
   renderAll();
@@ -243,7 +245,7 @@ function renderHerd(){
       <span class="main">
         <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
-          ${isSold(a)?'<span class="pill sold">Sold</span>': a.collar ? (a.collarOn?'<span class="pill ok">Fitted</span>':'<span class="pill warn">Not fitted</span>') : ''}</span>
+          ${isSold(a)?'<span class="pill sold">Sold</span>': a.collar ? (a.collarOn?'<span class="pill ok">Fitted</span>':'<span class="pill warn">Not fitted</span>') : ''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
         <span class="line2">${esc(a.group||'No group')}${a.notes?' · '+esc(a.notes):''}</span>
       </span>
       <span class="when">${esc(ago(a.updatedAt))}</span>
@@ -302,7 +304,7 @@ const expsForCow = id => [...S.exposures.values()].filter(x=>(x.cowIds||[]).incl
 function expLine(x, showBull){
   const b = S.animals.get(x.bullId);
   const range = `${fmtDate(x.start)} – ${x.end?fmtDate(x.end):'<b>still in</b>'}`;
-  return `<div class="exp"><span class="who">${showBull?esc(label(b)):''}${x.group?`${showBull?' · ':''}${esc(x.group)}`:''} · ${(x.cowIds||[]).length} cows</span><span class="muted">${range}</span></div>`;
+  return `<div class="exp"><span class="who">${showBull?esc(b?label(b):'AI / outside bull'):''}${x.group?`${showBull?' · ':''}${esc(x.group)}`:''} · ${(x.cowIds||[]).length} cows</span><span class="muted">${range}</span></div>`;
 }
 function renderBulls(){
   const el=$('#bullList');
@@ -447,6 +449,7 @@ function openCollar(id){
     </div>
     <form id="cf" class="card">
       <label class="f">Collar note<input id="c-note" type="text" value="${esc(c.note||'')}" placeholder="Colour, condition, battery"></label>
+      <label class="f">eShepherd neckband serial (optional)<input id="c-nb" type="text" inputmode="numeric" value="${esc(c.neckband||'')}" placeholder="e.g. 4153663861"></label>
       <label class="check"><input id="c-lost" type="checkbox" ${c.status==='lost'?'checked':''}> Lost or out of use</label>
       <div class="bar"><button class="btn primary" type="submit" style="flex:1">Save</button><button class="btn danger" type="button" id="c-del">Remove from list</button></div>
     </form>
@@ -468,11 +471,12 @@ function openCollar(id){
   flt && flt.addEventListener('input', e=>{ const q=e.target.value.toLowerCase().trim(); root.querySelectorAll('[data-assign]').forEach(b=>b.hidden=!!q&&!b.dataset.s.includes(q)); });
   $('#cf').addEventListener('submit', e=>{
     e.preventDefault();
-    const note=$('#c-note').value.trim(), status=$('#c-lost').checked?'lost':'ok', ch=[];
+    const note=$('#c-note').value.trim(), status=$('#c-lost').checked?'lost':'ok', neckband=$('#c-nb').value.trim(), ch=[];
+    if(neckband!==(c.neckband||'')) ch.push({f:'Neckband serial',from:c.neckband||'',to:neckband});
     if(note!==(c.note||'')) ch.push({f:'Collar note',from:c.note||'',to:note});
     if(status!==(c.status||'ok')) ch.push({f:'Collar status',from:c.status==='lost'?'lost':'in use',to:status==='lost'?'lost':'in use'});
     if(!ch.length){ closeSheet(); return; }
-    patch('collars/'+id, {note, status, updatedAt:Date.now(), updatedBy:me()});
+    patch('collars/'+id, {note, status, neckband, updatedAt:Date.now(), updatedBy:me()});
     logChange(id,'collar',`Collar ${c.number}`,'edited',ch); closeSheet(); toast('Saved');
   });
 }
@@ -494,13 +498,16 @@ function fmtVal(f, v){
 function whatOf(col, id, rec){
   if(col==='animals') return label(rec || S.animals.get(id));
   if(col==='collars') return `Collar ${(rec||S.collars.get(id)||{}).number||''}`;
+  if(col==='treatments') return `Treatment: ${(rec||S.treatments.get(id)||{}).product||''}`;
+  if(col==='expenses') return `Expense: ${(rec||S.expenses.get(id)||{}).category||''}`;
+  if(col==='preg') return `Breeding record for ${label(S.animals.get((rec||S.preg.get(id)||{}).cowId))}`;
   const x = rec || S.exposures.get(id); return x ? `${label(S.animals.get(x.bullId))} with ${x.group||'selected cows'}` : 'Bull with cows';
 }
 function takeConflicts(list, batch){
   const times = {}; batch.forEach(o=>{ times[o.path]=o.t; });
   list.forEach(c=>{
     const path = c.col+'/'+c.id;
-    const coll = c.col==='animals'?S.animals : c.col==='collars'?S.collars : S.exposures;
+    const coll = S[c.col] || S.exposures;
     const rec = coll.get(c.id);
     const item = { key: path+'|'+(c.field||'deleted'), col:c.col, id:c.id, type:c.type, field:c.field||'', mine:c.mine, theirs:c.theirs, by:c.by||'', at:c.at||'', myAt:times[path]||Date.now(), what:whatOf(c.col,c.id,rec), record: rec ? {...rec} : null };
     conflicts = conflicts.filter(x=>x.key!==item.key).concat([item]);
@@ -652,7 +659,7 @@ function switchTo(code, ranchName){
   if(!code) return 'Enter the ranch code.';
   if(code===cfg.code){ if(ranchName) cfg.ranchName=ranchName; LS.set(K.cfg,cfg); return ''; }
   if(cfg.code && outbox.length) return `This phone has ${outbox.length} change${outbox.length>1?'s':''} for ${cfg.ranchName||'its ranch'} that haven’t been sent yet. Get signal and sync before switching.`;
-  if(cfg.code){ mirror.animals={}; mirror.exposures={}; mirror.collars={}; mirror.history=[]; outbox=[]; saveOutbox(); conflicts=[]; saveConflicts(); }
+  if(cfg.code){ COLS.forEach(c=>{ mirror[c]={}; }); mirror.history=[]; outbox=[]; saveOutbox(); conflicts=[]; saveConflicts(); }
   mirror.rev=0; S.lastSync=0; saveMirror();
   cfg.code=code; cfg.ranchName=ranchName||''; delete cfg.role; delete cfg.crewCode; LS.set(K.cfg,cfg); lastErr='';
   recompute(); renderSetup();
@@ -734,6 +741,12 @@ function openAnimal(id){
         <label class="f">Brand<input id="a-b1" type="text" value="${esc(a.brand1||'')}"></label>
         <label class="f">Second brand (optional)<input id="a-b2" type="text" value="${esc(a.brand2||'')}"></label>
       </div>
+      <div class="grid2">
+        <label class="f">Visual tag (VID)<input id="a-vid" type="text" value="${esc(a.vid||'')}"></label>
+        <label class="f">EID / RFID tag<input id="a-eid" type="text" inputmode="numeric" value="${esc(a.eid||'')}"></label>
+        <label class="f">Breed<input id="a-breed" type="text" list="breedlist" value="${esc(a.breed||'')}"><datalist id="breedlist">${[...new Set(animals().map(x=>x.breed).filter(Boolean))].map(b=>`<option value="${esc(b)}">`).join('')}</datalist></label>
+        <label class="f">Date of birth<input id="a-dob" type="date" value="${esc(a.birthDate||'')}"></label>
+      </div>
       <label class="f">Notes<textarea id="a-notes">${esc(a.notes||'')}</textarea></label>
       ${fin()?`      <div class="grid2">
         <label class="f">Purchase price ($)<input id="a-pp" type="text" inputmode="decimal" value="${esc(mv('purchasePrice'))}"></label>
@@ -749,13 +762,18 @@ function openAnimal(id){
       <button type="button" class="updated" id="a-hist">Last updated ${esc(ago(a.updatedAt))}${a.updatedBy?` by ${esc(a.updatedBy)}`:''} · show changes</button>
       <div id="a-histlist" hidden></div>
     </div>
+    ${(()=>{ if(a.kind==='bull'||a.kind==='steer') return ''; const b=breedingFor(a); return `<div class="card"><b>Breeding</b>${b?`<div><span class="pill ${BSTATUS[b.status][1]}">${BSTATUS[b.status][0]}</span> ${b.from&&b.status!=='calved'&&b.status!=='open'?`Due ${esc(fmtDate(b.from))} – ${esc(fmtDate(b.to))}`:''}</div>`:'<div class="small muted">Nothing recorded.</div>'}<div class="bar"><button type="button" class="btn" data-goto="breed">Breeding details</button></div></div>`; })()}
+    <div class="card"><b>Health</b>${(()=>{ const ts=treatmentsFor(id), w=withdrawalUntil(id); return (w?`<div class="notice warn">On withdrawal until ${esc(fmtDate(w))}</div>`:'')+(ts.length?ts.slice(0,8).map(t=>`<div class="exp"><span>${esc(t.product)}${t.dose?' · '+esc(t.dose):''}</span><span class="muted">${esc(fmtDate(t.date))}</span></div>`).join(''):'<div class="small muted">No treatments recorded.</div>'); })()}
+      <div class="bar"><button type="button" class="btn" data-goto="treat">Record treatment</button></div></div>
     <div class="card"><b>${a.kind==='bull'?'Cows he has been with':'Bulls she has been with'}</b>
       ${xs.length? xs.map(x=> a.kind==='bull' ? expLine(x,false) : expLine(x,true)).join('') : '<div class="small muted">None recorded.</div>'}
     </div>`:''}
   `);
   const margin=()=>{ const p=parseMoney($('#a-pp').value), s=parseMoney($('#a-sp').value);
     $('#a-margin').textContent = (typeof p==='number' && typeof s==='number') ? `Difference: ${money(s-p)}` : ''; };
-  if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin(); }
+  if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
+    $('#a-sd').addEventListener('change', ()=>{ const w=id&&withdrawalUntil(id); if(w && $('#a-sd').value && $('#a-sd').value<=w) $('#a-warn').innerHTML=`<div class="notice warn">This animal is on withdrawal until ${esc(fmtDate(w))}.</div>`; }); }
+  $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else openTreatment(null,[id]); }));
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
     $('#a-warn').innerHTML = d?`<div class="notice warn">Collar ${esc(v)} is already on ${esc(label(d))}${d.group?' in '+esc(d.group):''}.</div>`
@@ -780,6 +798,7 @@ function openAnimal(id){
     const pp=fin()?parseMoney($('#a-pp').value):'', sp=fin()?parseMoney($('#a-sp').value):'';
     if(pp===null || sp===null){ $('#a-warn').innerHTML='<div class="notice warn">Prices should be numbers, like 2450 or 2450.50.</div>'; return; }
     const v={ kind:$('#a-kind').value, collar:collarInput.value.trim(), group:$('#a-group').value.trim(), brand1:$('#a-b1').value.trim(), brand2:$('#a-b2').value.trim(), collarOn:$('#a-on').checked, notes:$('#a-notes').value.trim(),
+      vid:$('#a-vid').value.trim(), eid:$('#a-eid').value.trim(), breed:$('#a-breed').value.trim(), birthDate:$('#a-dob').value,
       purchasePrice:pp, purchaseDate:fin()?$('#a-pd').value:'', salePrice:sp, saleDate:fin()?$('#a-sd').value:'' };
     if(!fin()) FIN.forEach(k=>delete v[k]);
     if(!v.collar && !v.brand1){ $('#a-warn').innerHTML='<div class="notice warn">Enter a collar number or a brand so you can find this animal later.</div>'; return; }
@@ -801,31 +820,31 @@ function openAnimal(id){
   });
 }
 
-function openExposure(bullId){
+function openExposure(bullId, presetCows){
   const bs=bulls();
-  if(!bs.length){ toast('Add a bull first (set the type to Bull)'); return; }
   const g=groups();
-  let mode='group';
+  let mode=presetCows&&presetCows.length?'pick':'group';
   openSheet(`
-    <div class="sheet-h"><h2>Bull with cows</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="sheet-h"><h2>Record breeding</h2><button class="x" type="button" aria-label="Close">×</button></div>
     <form id="ef" class="card">
-      <label class="f">Bull<select id="e-bull">${bs.map(b=>`<option value="${esc(b.id)}" ${b.id===bullId?'selected':''}>${esc(label(b))}${b.brand1?' · '+esc(b.brand1):''}</option>`).join('')}</select></label>
-      <div class="seg" id="e-mode"><button type="button" data-m="group" aria-pressed="true">Whole group</button><button type="button" data-m="pick" aria-pressed="false">Pick cows</button></div>
-      <div id="e-groupbox"><label class="f">Group<select id="e-group">${g.map(x=>`<option>${esc(x)}</option>`).join('')||'<option value="">No groups yet</option>'}</select></label></div>
-      <div id="e-pickbox" hidden>
+      <label class="f">Bull<select id="e-bull">${bs.map(b=>`<option value="${esc(b.id)}" ${b.id===bullId?'selected':''}>${esc(label(b))}${b.brand1?' · '+esc(b.brand1):''}</option>`).join('')}<option value="" ${!bs.length?'selected':''}>AI or bull not in Herd Book</option></select></label>
+      <div class="seg" id="e-mode"><button type="button" data-m="group" aria-pressed="${mode==='group'}">Whole group</button><button type="button" data-m="pick" aria-pressed="${mode==='pick'}">Pick cows</button></div>
+      <div id="e-groupbox" ${mode!=='group'?'hidden':''}><label class="f">Group<select id="e-group">${g.map(x=>`<option>${esc(x)}</option>`).join('')||'<option value="">No groups yet</option>'}</select></label></div>
+      <div id="e-pickbox" ${mode!=='pick'?'hidden':''}>
         <input id="e-filter" type="search" placeholder="Filter by collar, brand or group">
-        <div class="picklist" id="e-pick" style="margin-top:8px">${females().sort(byCollar).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}"> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>
+        <div class="picklist" id="e-pick" style="margin-top:8px">${females().sort(byCollar).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${presetCows&&presetCows.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>
       </div>
       <div class="small muted" id="e-count"></div>
       <div class="grid2">
-        <label class="f">Put in<input id="e-start" type="date" value="${today()}"></label>
-        <label class="f">Pulled (leave blank if still in)<input id="e-end" type="date"></label>
+        <label class="f">Bull in, or AI date<input id="e-start" type="date" value="${today()}"></label>
+        <label class="f">Bull out (blank if still in; same day for AI)<input id="e-end" type="date"></label>
       </div>
       <label class="f">Note<input id="e-note" type="text" placeholder="Pasture, field, etc."></label>
       <button class="btn primary" type="submit">Save</button>
     </form>`);
   const pickIds=()=> mode==='group' ? females().filter(c=>c.group && c.group===$('#e-group').value).map(c=>c.id) : [...document.querySelectorAll('#e-pick input:checked')].map(i=>i.value);
-  const count=()=>{ $('#e-count').textContent = `${pickIds().length} cows and heifers will be recorded with this bull.`; };
+  const count=()=>{ const s=$('#e-start').value, e2=$('#e-end').value||s, G=gestation(); $('#e-count').textContent = `${pickIds().length} cows and heifers. Calving window: ${s?fmtDate(addDays(s,G)):'?'} – ${$('#e-end').value?fmtDate(addDays(e2,G)):'grows until the bull is out'}.`; };
+  $('#e-start').addEventListener('change',count); $('#e-end').addEventListener('change',count);
   $('#e-mode').addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m;
     document.querySelectorAll('#e-mode button').forEach(x=>x.setAttribute('aria-pressed',x===b)); $('#e-groupbox').hidden=mode!=='group'; $('#e-pickbox').hidden=mode!=='pick'; count(); });
   $('#e-group').addEventListener('change',count); $('#e-pick').addEventListener('change',count);
@@ -834,12 +853,13 @@ function openExposure(bullId){
   $('#ef').addEventListener('submit', e=>{
     e.preventDefault();
     const ids=pickIds(); if(!ids.length){ toast('Choose at least one cow'); return; }
-    const bull=S.animals.get($('#e-bull').value);
-    const rec={ bullId:bull.id, cowIds:ids, group: mode==='group'?$('#e-group').value:'', start:$('#e-start').value||today(), end:$('#e-end').value||'', note:$('#e-note').value.trim(), updatedAt:Date.now(), updatedBy:me() };
+    const bull=S.animals.get($('#e-bull').value) || null;
+    const rec={ bullId:bull?bull.id:'', cowIds:ids, group: mode==='group'?$('#e-group').value:'', start:$('#e-start').value||today(), end:$('#e-end').value||'', note:$('#e-note').value.trim(), updatedAt:Date.now(), updatedBy:me() };
     const xid=rid();
     put('exposures/'+xid, rec);
-    logChange(xid,'exposure',`${label(bull)} put with ${rec.group||'selected cows'} (${ids.length} head)`,'added',[{f:'Put in',to:fmtDate(rec.start)}].concat(rec.end?[{f:'Pulled',to:fmtDate(rec.end)}]:[]));
-    logChange(bull.id,'animal',label(bull),'put with cows',[{f:'Cows',to:`${rec.group||'selected cows'} · ${ids.length} head from ${fmtDate(rec.start)}`}]);
+    const bname = bull ? label(bull) : 'AI / outside bull';
+    logChange(xid,'exposure',`${bname} with ${rec.group||'selected cows'} (${ids.length} head)`,'added',[{f:'Put in',to:fmtDate(rec.start)}].concat(rec.end?[{f:'Pulled',to:fmtDate(rec.end)}]:[]));
+    if(bull) logChange(bull.id,'animal',label(bull),'put with cows',[{f:'Cows',to:`${rec.group||'selected cows'} · ${ids.length} head from ${fmtDate(rec.start)}`}]);
     closeSheet(); toast('Recorded');
   });
 }
@@ -879,17 +899,6 @@ async function saveFile(filename, data, type){
   setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   toast('Saved '+filename);
 }
-$('#exportCsv').addEventListener('click', ()=>{
-  const F=fin(); const rows=[['type','collar','group','brand1','brand2','collar_fitted','notes'].concat(F?['purchase_price','purchase_date','sale_price','sale_date']:[],['bulls_with','last_updated'])];
-  animals().sort(byCollar).forEach(a=>{
-    const bw = a.kind==='bull' ? '' : expsForCow(a.id).map(x=>`${label(S.animals.get(x.bullId))} ${x.start}${x.end?' to '+x.end:''}`).join('; ');
-    rows.push([KIND[a.kind]||'Cow',a.collar,a.group,a.brand1,a.brand2,a.collarOn?'yes':'no',a.notes].concat(F?[a.purchasePrice??'',a.purchaseDate||'',a.salePrice??'',a.saleDate||'']:[],[bw,a.updatedAt?new Date(a.updatedAt).toISOString():'']));
-  });
-  saveFile(`herd-${today()}.csv`, rows.map(r=>r.map(csvCell).join(',')).join('\n'), 'text/csv');
-});
-$('#exportJson').addEventListener('click', ()=>{
-  saveFile(`herd-backup-${today()}.json`, JSON.stringify({exported:new Date().toISOString(), animals:animals(), exposures:[...S.exposures.values()], collars:[...S.collars.values()]},null,2), 'application/json');
-});
 function parseCsv(text){
   const out=[]; let row=[], cell='', q=false;
   for(let i=0;i<text.length;i++){ const c=text[i];
@@ -900,37 +909,507 @@ function parseCsv(text){
   if(cell||row.length){ row.push(cell); out.push(row); }
   return out.filter(r=>r.some(x=>x.trim()));
 }
-$('#importFile').addEventListener('change', async e=>{
-  const file=e.target.files[0]; e.target.value=''; if(!file) return;
-  const rows=parseCsv(await file.text()); const msg=$('#importMsg');
-  if(rows.length<2){ msg.textContent='That file has no rows to import.'; return; }
-  const head=rows[0].map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
-  const col=(...n)=>head.findIndex(h=>n.includes(h));
-  const ix={kind:col('type','kind','class'),collar:col('collar','collarnumber','collarno'),group:col('group','herd','pasture'),b1:col('brand1','brand','firstbrand'),b2:col('brand2','secondbrand'),notes:col('notes','note','comments'),on:col('collarfitted','fitted','collaron'),
-    pp:col('purchaseprice','price','cost','boughtfor'),pd:col('purchasedate','bought','datebought'),sp:col('saleprice','soldfor'),sd:col('saledate','sold','datesold')};
-  if(ix.collar<0 && ix.b1<0){ msg.textContent='No “collar” or “brand” column found. Check the first row has column names.'; return; }
-  const existing=new Set(onHand().map(a=>String(a.collar).toLowerCase()).filter(Boolean));
-  const get=(r,i)=>i>=0?String(r[i]??'').trim():'';
-  const date=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:'';
-  let added=0, skipped=0; const now=Date.now();
-  for(const r of rows.slice(1)){
-    const k=get(r,ix.kind).toLowerCase(); const kind = k.startsWith('b')?'bull':k.startsWith('h')?'heifer':'cow';
-    const pp=parseMoney(get(r,ix.pp)), sp=parseMoney(get(r,ix.sp));
-    const v={kind, collar:get(r,ix.collar), group:get(r,ix.group), brand1:get(r,ix.b1), brand2:get(r,ix.b2), notes:get(r,ix.notes), collarOn:/^(y|yes|true|1)$/i.test(get(r,ix.on)),
-      purchasePrice:pp??'', purchaseDate:date(get(r,ix.pd)), salePrice:sp??'', saleDate:date(get(r,ix.sd))};
-    if(!fin()) FIN.forEach(k=>delete v[k]);
-    if((!v.collar&&!v.brand1) || (v.collar && existing.has(v.collar.toLowerCase()))){ skipped++; continue; }
-    outbox.push({op:'set', path:'animals/'+rid(), data:{...v, createdAt:now, updatedAt:now, updatedBy:me()}, t:now});
-    added++; if(v.collar) existing.add(v.collar.toLowerCase());
-  }
-  saveOutbox();
-  if(added) logChange('import','import',`Imported ${added} animals from ${file.name}`,'imported',[]); else recompute();
-  msg.textContent=`Imported ${added} animals.${skipped?` Skipped ${skipped} rows (no collar or brand, or collar already in the herd).`:''}`;
+// ---------- shared date helpers ----------
+const addDays = (d, n) => { if(!d) return ''; const x=new Date(d+'T12:00'); x.setDate(x.getDate()+Number(n||0)); return x.toLocaleDateString('en-CA'); };
+const daysBetween = (a, b) => Math.round((new Date(b+'T12:00') - new Date(a+'T12:00'))/86400000);
+const shortDate = d => d ? new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '';
+const yearOf = d => d ? String(d).slice(0,4) : '';
+const pct = (a, b) => b ? (a/b*100) : null;
+const fmtPct = p => p==null ? '—' : (p>0?'+':'')+p.toFixed(1)+'%';
+function animalPicker(id, list, checked){
+  return `<input id="${id}-filter" type="search" placeholder="Filter by collar, brand or group">
+    <div class="picklist" id="${id}" style="margin-top:8px">${list.sort(byCollar).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group,c.vid,KIND[c.kind]].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${checked&&checked.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>`;
+}
+function wirePicker(id){
+  const f=$('#'+id+'-filter'); f && f.addEventListener('input', e=>{ const q=e.target.value.toLowerCase().trim(); document.querySelectorAll('#'+id+' label').forEach(l=>l.hidden = !!q && !l.dataset.s.includes(q)); });
+  return () => [...document.querySelectorAll('#'+id+' input:checked')].map(i=>i.value);
+}
+
+// ---------- health: vaccines & medicines ----------
+const ROUTES = ['Subcutaneous (SC)','Intramuscular (IM)','Pour-on','Oral','Intranasal','Intravenous (IV)','Topical'];
+const TTYPE = {vaccine:'Vaccine', medicine:'Medicine', other:'Other'};
+const treatments = () => [...S.treatments.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.updatedAt||0)-(a.updatedAt||0));
+const treatmentsFor = id => treatments().filter(t=>(t.animalIds||[]).includes(id));
+const withdrawalEnd = t => (t.withdrawalDays!==''&&t.withdrawalDays!=null&&Number(t.withdrawalDays)>0) ? addDays(t.date, Number(t.withdrawalDays)) : '';
+function withdrawalUntil(id){ let end=''; treatmentsFor(id).forEach(t=>{ const e=withdrawalEnd(t); if(e && e>=today() && e>end) end=e; }); return end; }
+function boostersDue(){
+  // latest record per animal+product with a booster date; due if within 30 days or overdue
+  const seen=new Set(), out=[];
+  treatments().forEach(t=>{ (t.animalIds||[]).forEach(aid=>{ const k=aid+'|'+String(t.product).toLowerCase(); if(seen.has(k)) return; seen.add(k);
+    const a=S.animals.get(aid); if(!a || isSold(a) || !t.boosterDue) return;
+    const d=daysBetween(today(), t.boosterDue); if(d<=30) out.push({a, t, d}); }); });
+  return out.sort((x,y)=>x.d-y.d);
+}
+function treatmentCard(t){
+  const ids=t.animalIds||[]; const names=ids.slice(0,6).map(id=>{ const a=S.animals.get(id); return a?(a.collar?'#'+a.collar:(a.brand1||label(a))):'(deleted)'; });
+  const w=withdrawalEnd(t);
+  return `<button type="button" class="row" style="grid-template-columns:1fr auto" data-treat="${esc(t.id)}"><span class="main">
+    <span class="line1">${esc(t.product||'Treatment')} <span class="pill ${t.kind==='vaccine'?'ok':''}">${esc(TTYPE[t.kind]||'Other')}</span>${w&&w>=today()?`<span class="pill warn">Withdrawal to ${esc(shortDate(w))}</span>`:''}</span>
+    <span class="line2">${esc(fmtDate(t.date))} · ${ids.length} head${t.group?' · '+esc(t.group):''}${t.dose?' · '+esc(t.dose):''}${t.route?' · '+esc(t.route):''}</span>
+    <span class="line2">${esc(names.join(', '))}${ids.length>6?' …':''}${t.givenBy?' · by '+esc(t.givenBy):''}${fin()&&t.cost!==''&&t.cost!=null?' · '+esc(money(t.cost)):''}</span></span><span></span></button>`;
+}
+function renderHealth(){
+  const q=($('#hq').value||'').toLowerCase().trim();
+  const due=boostersDue();
+  const wd=onHand().map(a=>({a, end:withdrawalUntil(a.id)})).filter(x=>x.end).sort((x,y)=>x.end.localeCompare(y.end));
+  $('#healthDue').innerHTML = (due.length?`<div class="card"><b>Boosters due</b>${due.map(({a,t,d})=>`<div class="exp"><span>${esc(label(a))} ${brandsHtml(a)} · ${esc(t.product)}</span><span class="${d<0?'warn-text':'muted'}">${d<0?`${-d} d overdue`:d===0?'today':`in ${d} d`} (${esc(shortDate(t.boosterDue))})</span></div>`).join('')}</div>`:'')
+    + (wd.length?`<div class="card"><b>On withdrawal: don’t sell or slaughter yet</b>${wd.map(({a,end})=>`<div class="exp"><span>${esc(label(a))} ${brandsHtml(a)}</span><span class="warn-text">until ${esc(fmtDate(end))}</span></div>`).join('')}</div>`:'');
+  const list=treatments().filter(t=>!q || [t.product,t.kind,t.notes,t.batch,t.group,t.givenBy, ...(t.animalIds||[]).map(id=>{ const a=S.animals.get(id); return a?[a.collar,a.brand1,a.brand2,a.vid].join(' '):''; })].join(' ').toLowerCase().includes(q));
+  $('#healthList').innerHTML = !S.treatments.size ? `<div class="empty"><strong>No treatments recorded yet</strong>Tap “Record treatment” after vaccinating or treating a cow or a whole group.</div>`
+    : !list.length ? `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”.</div>`
+    : `<div class="list">${list.map(treatmentCard).join('')}</div>`;
+}
+function openTreatment(id, presetIds){
+  const t = id ? S.treatments.get(id) : {date:today(), kind:'vaccine', animalIds:presetIds||[], givenBy:me()};
+  if(id && !t) return;
+  const products=[...new Set(treatments().map(x=>x.product).filter(Boolean))];
+  const g=groups(); let mode = (t.animalIds||[]).length ? 'pick' : 'group';
+  openSheet(`<div class="sheet-h"><h2>${id?'Treatment':'Record treatment'}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="tf" class="card" autocomplete="off">
+      <div class="grid2">
+        <label class="f">Product<input id="t-product" type="text" list="t-products" value="${esc(t.product||'')}" placeholder="e.g. Bovi-Shield Gold"><datalist id="t-products">${products.map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label>
+        <label class="f">Type<select id="t-kind">${Object.entries(TTYPE).map(([k,v])=>`<option value="${k}" ${t.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
+        <label class="f">Date given<input id="t-date" type="date" value="${esc(t.date||today())}"></label>
+        <label class="f">Dose<input id="t-dose" type="text" value="${esc(t.dose||'')}" placeholder="e.g. 2 mL"></label>
+        <label class="f">Route<input id="t-route" type="text" list="t-routes" value="${esc(t.route||'')}"><datalist id="t-routes">${ROUTES.map(r=>`<option value="${esc(r)}">`).join('')}</datalist></label>
+        <label class="f">Withdrawal (days)<input id="t-wd" type="text" inputmode="numeric" value="${esc(t.withdrawalDays??'')}" placeholder="0 if none"></label>
+        <label class="f">Booster due (optional)<input id="t-boost" type="date" value="${esc(t.boosterDue||'')}"></label>
+        <label class="f">Batch / lot<input id="t-batch" type="text" value="${esc(t.batch||'')}"></label>
+        <label class="f">Given by<input id="t-by" type="text" value="${esc(t.givenBy||'')}"></label>
+        ${fin()?`<label class="f">Cost ($, optional)<input id="t-cost" type="text" inputmode="decimal" value="${esc(t.cost??'')}"></label>`:''}
+      </div>
+      <div class="small muted" id="t-wdnote"></div>
+      <b>Given to</b>
+      <div class="seg" id="t-mode"><button type="button" data-m="group" aria-pressed="${mode==='group'}">Whole group</button><button type="button" data-m="pick" aria-pressed="${mode==='pick'}">Pick animals</button></div>
+      <div id="t-groupbox" ${mode!=='group'?'hidden':''}><label class="f">Group<select id="t-group">${g.map(x=>`<option ${x===t.group?'selected':''}>${esc(x)}</option>`).join('')||'<option value="">No groups yet</option>'}</select></label></div>
+      <div id="t-pickbox" ${mode!=='pick'?'hidden':''}>${animalPicker('t-pick', onHand(), t.animalIds)}</div>
+      <div class="small muted" id="t-count"></div>
+      <label class="f">Notes<textarea id="t-notes">${esc(t.notes||'')}</textarea></label>
+      <div id="t-warn"></div>
+      <div class="bar"><button class="btn primary" type="submit" style="flex:1">${id?'Save changes':'Save treatment'}</button>${id?'<button class="btn danger" type="button" id="t-del">Delete</button>':''}</div>
+    </form>`);
+  const picked = wirePicker('t-pick');
+  const ids = () => mode==='group' ? onHand().filter(a=>a.group && a.group===$('#t-group').value).map(a=>a.id) : picked();
+  const count = () => { $('#t-count').textContent = `${ids().length} head will get this treatment.`;
+    const wd=Number($('#t-wd').value)||0; $('#t-wdnote').textContent = wd>0 ? `Withdrawal ends ${fmtDate(addDays($('#t-date').value||today(), wd))}.` : ''; };
+  $('#t-mode').addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m; $('#t-mode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); $('#t-groupbox').hidden=mode!=='group'; $('#t-pickbox').hidden=mode!=='pick'; count(); });
+  ['#t-group','#t-pick','#t-wd','#t-date'].forEach(s=>{ const el=$(s); el && el.addEventListener(s==='#t-wd'?'input':'change', count); });
+  count();
+  const del=$('#t-del');
+  del && del.addEventListener('click', ()=>{ if(!del.classList.contains('armed')){ del.classList.add('armed'); del.textContent='Tap again to delete'; return; }
+    remove('treatments/'+id); logChange(id,'treatment',`${t.product} (${(t.animalIds||[]).length} head)`,'deleted',[]); closeSheet(); toast('Treatment deleted'); });
+  $('#tf').addEventListener('submit', e=>{
+    e.preventDefault();
+    const list=ids(); const cost=fin()?parseMoney($('#t-cost').value):undefined;
+    if(!$('#t-product').value.trim()){ $('#t-warn').innerHTML='<div class="notice warn">Enter the product name.</div>'; return; }
+    if(!list.length){ $('#t-warn').innerHTML='<div class="notice warn">Choose who got it.</div>'; return; }
+    if(cost===null){ $('#t-warn').innerHTML='<div class="notice warn">Cost should be a number.</div>'; return; }
+    const wd=$('#t-wd').value.trim(); if(wd && isNaN(Number(wd))){ $('#t-warn').innerHTML='<div class="notice warn">Withdrawal should be a number of days.</div>'; return; }
+    const rec={ product:$('#t-product').value.trim(), kind:$('#t-kind').value, date:$('#t-date').value||today(), dose:$('#t-dose').value.trim(), route:$('#t-route').value.trim(),
+      withdrawalDays: wd===''?'':Number(wd), boosterDue:$('#t-boost').value, batch:$('#t-batch').value.trim(), givenBy:$('#t-by').value.trim(),
+      animalIds:list, group: mode==='group'?$('#t-group').value:'', notes:$('#t-notes').value.trim(), updatedAt:Date.now(), updatedBy:me() };
+    if(fin()) rec.cost=cost;
+    if(id){ patch('treatments/'+id, rec); logChange(id,'treatment',`${rec.product} (${list.length} head)`,'edited',[]); }
+    else { const nid=rid(); put('treatments/'+nid, rec); logChange(nid,'treatment',`${rec.product} given to ${list.length} head${rec.group?' in '+rec.group:''}`,'added',[]); }
+    closeSheet(); toast(id?'Saved':`Recorded for ${list.length} head`);
+  });
+}
+$('#treatBtn').addEventListener('click', ()=>openTreatment(null));
+$('#hq').addEventListener('input', renderHealth);
+$('#healthList').addEventListener('click', e=>{ const r=e.target.closest('[data-treat]'); if(r) openTreatment(r.dataset.treat); });
+
+// ---------- breeding: pregnancy & calving ----------
+const gestation = () => Number(cfg.gestation)||283;
+const pregRecs = id => [...S.preg.values()].filter(p=>p.cowId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+function breedingFor(cow){
+  const ex = expsForCow(cow.id)[0];
+  const recs = pregRecs(cow.id);
+  if(!ex && !recs.length) return null;
+  const since = ex ? ex.start : '';
+  const recent = recs.filter(p=>!since || (p.date||'')>=since);
+  const calving = recent.find(p=>p.type==='calving');
+  const check = recent.find(p=>p.type==='check');
+  const G = gestation();
+  let from='', to='', basis='';
+  if(check && check.result==='pregnant' && check.daysPregnant!=='' && check.daysPregnant!=null && !isNaN(Number(check.daysPregnant))){
+    const due = addDays(check.date, G - Number(check.daysPregnant)); from=addDays(due,-7); to=addDays(due,7); basis='from preg check';
+  } else if(ex){ from=addDays(ex.start, G); to=addDays(ex.end||today(), G); basis = ex.end ? 'from exposure dates' : 'bull still in; window grows until he’s pulled'; }
+  const status = calving ? 'calved' : check && check.result==='open' ? 'open' : check && check.result==='pregnant' ? 'pregnant' : ex ? 'exposed' : 'unknown';
+  return { ex, check, calving, from, to, basis, status };
+}
+const BSTATUS = {calved:['Calved','ok'], open:['Open','warn'], pregnant:['Pregnant','ok'], exposed:['Exposed',''], unknown:['—','']};
+function breedRow(a, b){
+  const [txt,cls]=BSTATUS[b.status];
+  const win = b.status==='calved' ? `Calved ${fmtDate(b.calving.date)}` : b.status==='open' ? `Checked open ${fmtDate(b.check.date)}` : b.from ? `Due ${shortDate(b.from)} – ${shortDate(b.to)}` : '';
+  const bull = b.ex ? (b.ex.bullId ? label(S.animals.get(b.ex.bullId)) : 'AI / no bull') : '';
+  return `<button type="button" class="row" data-breed="${esc(a.id)}">${collarHtml(a)}<span class="main"><span class="line1">${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="pill ${cls}">${txt}</span></span><span class="line2">${esc(win)}${bull?' · '+esc(bull):''}</span></span><span></span></button>`;
+}
+function renderBreeding(){
+  $('#gestNote').textContent = `Calving windows use a ${gestation()}-day gestation. Real calving can land about 10 days either side.`;
+  const rows = onHand().filter(a=>a.kind!=='bull' && a.kind!=='steer').map(a=>({a, b:breedingFor(a)})).filter(x=>x.b);
+  const t=today(), soon=addDays(t,30), recentCalved=addDays(t,-60);
+  const sec = (title, list, empty) => list.length ? `<h2>${title} · ${list.length}</h2><div class="list">${list.map(x=>breedRow(x.a,x.b)).join('')}</div>` : (empty?`<h2>${title}</h2><div class="small muted">${empty}</div>`:'');
+  const active = rows.filter(x=>x.b.status==='pregnant'||x.b.status==='exposed').sort((x,y)=>(x.b.from||'').localeCompare(y.b.from||''));
+  const calvingSoon = active.filter(x=>x.b.from && x.b.from<=soon);
+  const later = active.filter(x=>!(x.b.from && x.b.from<=soon));
+  $('#breedList').innerHTML = !rows.length ? `<div class="empty"><strong>No breeding recorded yet</strong>Record which bull went in with which cows (or an AI date) and each cow gets a calving window.</div>`
+    : sec('Calving now or within 30 days', calvingSoon, 'None due in the next 30 days.')
+    + sec('Expecting later', later)
+    + sec('Open', rows.filter(x=>x.b.status==='open'))
+    + sec('Calved in the last 60 days', rows.filter(x=>x.b.status==='calved' && x.b.calving.date>=recentCalved));
+  renderBulls();
+}
+function openBreedCow(id){
+  const a=S.animals.get(id); if(!a) return; const b=breedingFor(a)||{status:'unknown'};
+  const G=gestation();
+  openSheet(`<div id="bc" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>${esc(label(a))}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card">
+      <div>${brandsHtml(a)} <span class="pill ${BSTATUS[b.status][1]}">${BSTATUS[b.status][0]}</span></div>
+      ${b.from&&b.status!=='calved'&&b.status!=='open'?`<div style="font-size:20px;font-weight:700">Due ${esc(fmtDate(b.from))} – ${esc(fmtDate(b.to))}</div><div class="small muted">${esc(b.basis)} · ${G}-day gestation</div>`:''}
+      ${b.ex?`<div class="small">Exposed ${esc(fmtDate(b.ex.start))} – ${b.ex.end?esc(fmtDate(b.ex.end)):'still in'} · ${esc(b.ex.bullId?label(S.animals.get(b.ex.bullId)):'AI / no bull')}</div>`:''}
+      ${b.check?`<div class="small">Preg check ${esc(fmtDate(b.check.date))}: <b>${esc(b.check.result)}</b>${b.check.daysPregnant!==''&&b.check.daysPregnant!=null?` · ${esc(b.check.daysPregnant)} days along`:''}</div>`:''}
+      ${b.calving?`<div class="small">Calved ${esc(fmtDate(b.calving.date))}${b.calving.calfSex?' · '+esc(b.calving.calfSex):''}${b.calving.notes?' · '+esc(b.calving.notes):''}</div>`:''}
+      <div class="bar"><button type="button" class="btn" data-act="check">Record preg check</button><button type="button" class="btn tag" data-act="calving">Record calving</button></div>
+      <div class="bar"><button type="button" class="btn" data-act="expose">Record breeding</button><button type="button" class="btn" data-act="open">Cow details</button></div>
+    </div>
+    ${pregRecs(id).length?`<div class="card"><b>History</b>${pregRecs(id).map(p=>`<div class="exp"><span>${p.type==='calving'?'Calved':'Preg check: '+esc(p.result)}${p.notes?' · '+esc(p.notes):''}</span><span class="muted">${esc(fmtDate(p.date))} <button type="button" class="linkbtn" data-delp="${esc(p.id)}">remove</button></span></div>`).join('')}</div>`:''}
+  </div>`);
+  $('#bc').addEventListener('click', e=>{
+    const b2=e.target.closest('[data-act]');
+    if(b2){ const act=b2.dataset.act; if(act==='open') return openAnimal(id); if(act==='expose') return openExposure(null, [id]); return openPreg(id, act); }
+    const d=e.target.closest('[data-delp]'); if(d){ remove('preg/'+d.dataset.delp); logChange(id,'animal',label(a),'removed a breeding record',[]); openBreedCow(id); }
+  });
+}
+function openPreg(cowId, type){
+  const a=S.animals.get(cowId); if(!a) return;
+  openSheet(`<div class="sheet-h"><h2>${type==='check'?'Preg check':'Calving'} · ${esc(label(a))}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="pgf" class="card" autocomplete="off">
+      <label class="f">Date<input id="pg-date" type="date" value="${today()}"></label>
+      ${type==='check' ? `
+        <div class="seg" id="pg-res"><button type="button" data-r="pregnant" aria-pressed="true">Pregnant</button><button type="button" data-r="open" aria-pressed="false">Open</button><button type="button" data-r="unsure" aria-pressed="false">Not sure</button></div>
+        <label class="f">Days pregnant (optional, from the vet)<input id="pg-days" type="text" inputmode="numeric" placeholder="Makes the due date more exact"></label>
+        <div class="small muted" id="pg-due"></div>`
+      : `<div class="grid2"><label class="f">Calf<select id="pg-sex"><option value="">—</option><option>Heifer calf</option><option>Bull calf</option><option>Twins</option><option>Stillborn</option></select></label>
+          <label class="f">Calf collar or tag (optional)<input id="pg-calftag" type="text"></label></div>
+        <label class="check"><input id="pg-addcalf" type="checkbox" checked> Add the calf to the herd</label>`}
+      <label class="f">Notes<input id="pg-notes" type="text"></label>
+      <button class="btn primary" type="submit">Save</button>
+    </form>`);
+  let res='pregnant';
+  const rs=$('#pg-res');
+  const due=()=>{ const d=Number($('#pg-days')?.value); $('#pg-due') && ($('#pg-due').textContent = res==='pregnant' && d>0 ? `Due about ${fmtDate(addDays($('#pg-date').value||today(), gestation()-d))}.` : ''); };
+  rs && rs.addEventListener('click', e=>{ const b=e.target.closest('[data-r]'); if(!b) return; res=b.dataset.r; rs.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); due(); });
+  $('#pg-days') && $('#pg-days').addEventListener('input', due);
+  $('#pgf').addEventListener('submit', e=>{
+    e.preventDefault();
+    const date=$('#pg-date').value||today(), notes=$('#pg-notes').value.trim(), pid=rid(), now=Date.now();
+    if(type==='check'){
+      const dp=$('#pg-days').value.trim();
+      put('preg/'+pid, {cowId, type:'check', date, result:res, daysPregnant: dp===''||isNaN(Number(dp))?'':Number(dp), notes, updatedAt:now, updatedBy:me()});
+      logChange(cowId,'animal',label(a),'preg checked',[{f:'Result',to:res+(dp?` (${dp} days)`:'')}]);
+    } else {
+      const sex=$('#pg-sex').value; let calfId='';
+      if($('#pg-addcalf').checked && sex!=='Stillborn'){
+        calfId=rid(); const calf={kind:'calf', collar:$('#pg-calftag').value.trim(), group:a.group||'', brand1:'', brand2:'', collarOn:false,
+          notes:`${sex||'Calf'} of ${label(a)}`, birthDate:date, damId:cowId, createdAt:now, updatedAt:now, updatedBy:me()};
+        put('animals/'+calfId, calf); logChange(calfId,'animal',label(calf),'born',[{f:'Dam',to:label(a)}]);
+      }
+      put('preg/'+pid, {cowId, type:'calving', date, calfSex:sex, calfId, notes, updatedAt:now, updatedBy:me()});
+      logChange(cowId,'animal',label(a),'calved',[{f:'Calf',to:sex||'recorded'}]);
+    }
+    closeSheet(); toast('Saved'); openBreedCow(cowId);
+  });
+}
+$('#breedList').addEventListener('click', e=>{ const r=e.target.closest('[data-breed]'); if(r) openBreedCow(r.dataset.breed); });
+$('#gestBtn').addEventListener('click', ()=>{
+  openSheet(`<div class="sheet-h"><h2>Gestation length</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="gf" class="card"><label class="f">Days from breeding to calving<input id="g-days" type="text" inputmode="numeric" value="${gestation()}"></label>
+    <div class="small muted">Beef cattle average about 283 days. Some breeds run a few days shorter or longer.</div><button class="btn primary" type="submit">Save</button></form>`);
+  $('#gf').addEventListener('submit', e=>{ e.preventDefault(); const d=Number($('#g-days').value); if(d>=250&&d<=310){ cfg.gestation=d; LS.set(K.cfg,cfg); closeSheet(); renderAll(); toast('Saved'); } else toast('Enter a number between 250 and 310'); });
 });
+
+// ---------- money (full access only) ----------
+const EXP_CATS = ['Feed','Vet & medicine','Fuel','Labour','Repairs','Freight & trucking','Pasture & lease','Fees & commissions','Equipment','Other'];
+function renderMoney(){
+  if(!fin()){ $('#moneyBody').innerHTML='<div class="empty"><strong>Not available on this phone</strong>Money is only shown on phones with full access.</div>'; return; }
+  const years=[...new Set([...animals().flatMap(a=>[yearOf(a.purchaseDate),yearOf(a.saleDate)]), ...[...S.expenses.values()].map(x=>yearOf(x.date)), ...[...S.treatments.values()].map(t=>yearOf(t.date))].filter(Boolean))].sort().reverse();
+  const ySel=$('#mYear'), gSel=$('#mGroup');
+  const yv=S.mYear||'', gv=S.mGroup||'';
+  ySel.innerHTML=`<option value="">All years</option>`+years.map(y=>`<option ${y===yv?'selected':''}>${y}</option>`).join('');
+  const allGroups=[...new Set(animals().map(a=>a.group).filter(Boolean))].sort();
+  gSel.innerHTML=`<option value="">Whole herd</option>`+allGroups.map(g=>`<option ${g===gv?'selected':''}>${esc(g)}</option>`).join('');
+  const inY = d => !yv || yearOf(d)===yv;
+  const pool = animals().filter(a=>!gv || a.group===gv);
+  const num = v => Number(v)||0, has = v => v!==''&&v!=null&&!isNaN(Number(v));
+  const bought = pool.filter(a=>has(a.purchasePrice) && inY(a.purchaseDate||''));
+  const sold = pool.filter(a=>isSold(a) && has(a.salePrice) && inY(a.saleDate||''));
+  const purchases = bought.reduce((t,a)=>t+num(a.purchasePrice),0), sales = sold.reduce((t,a)=>t+num(a.salePrice),0);
+  const exps = [...S.expenses.values()].filter(x=>inY(x.date) && (!gv || !x.group || x.group===gv)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const expTotal = exps.reduce((t,x)=>t+num(x.amount),0);
+  const tCost = [...S.treatments.values()].filter(t=>has(t.cost) && inY(t.date) && (!gv || (t.animalIds||[]).some(id=>(S.animals.get(id)||{}).group===gv))).reduce((t,x)=>t+num(x.cost),0);
+  const costs = purchases + expTotal + tCost, net = sales - costs;
+  const soldWithCost = sold.filter(a=>has(a.purchasePrice));
+  const sp = soldWithCost.reduce((t,a)=>t+num(a.salePrice),0), cp = soldWithCost.reduce((t,a)=>t+num(a.purchasePrice),0);
+  const onHandCost = pool.filter(a=>!isSold(a) && has(a.purchasePrice)).reduce((t,a)=>t+num(a.purchasePrice),0);
+  const tile = (k, v, sub, cls) => `<div class="mtile ${cls||''}"><div class="small muted">${k}</div><div class="mv">${v}</div>${sub?`<div class="small muted">${sub}</div>`:''}</div>`;
+  $('#moneyBody').innerHTML = `
+    <div class="mtiles">
+      ${tile('Net profit', money(net), `${fmtPct(pct(net, costs))} on ${money(costs)} spent`, net>=0?'good':'bad')}
+      ${tile('Sales', money(sales), `${sold.length} head sold`)}
+      ${tile('Purchases', money(purchases), `${bought.length} head bought`)}
+      ${tile('Expenses', money(expTotal+tCost), tCost?`incl. ${money(tCost)} treatments`:`${exps.length} entries`)}
+    </div>
+    <div class="card"><b>Sold animals</b>
+      <div class="small muted">Profit on animals with both a purchase and a sale price: ${money(sp-cp)} (${fmtPct(pct(sp-cp, cp))}). Expenses aren’t split per animal.</div>
+      ${sold.length?`<div class="tablewrap"><table class="mtable"><thead><tr><th>Animal</th><th>Sold</th><th class="r">Bought</th><th class="r">Sold for</th><th class="r">Profit</th><th class="r">%</th></tr></thead><tbody>
+      ${sold.sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||'')).map(a=>{ const p=has(a.purchasePrice)?num(a.salePrice)-num(a.purchasePrice):null;
+        return `<tr data-id="${esc(a.id)}"><td>${esc(label(a))}${a.brand1?' · '+esc(a.brand1):''}</td><td>${esc(shortDate(a.saleDate))}</td><td class="r">${has(a.purchasePrice)?money(a.purchasePrice):'—'}</td><td class="r">${money(a.salePrice)}</td><td class="r ${p==null?'':p>=0?'good-text':'warn-text'}">${p==null?'—':money(p)}</td><td class="r">${p==null?'—':fmtPct(pct(p,num(a.purchasePrice)))}</td></tr>`; }).join('')}
+      </tbody></table></div>`:'<div class="small muted">No sales in this period.</div>'}
+    </div>
+    <div class="card"><b>On hand</b><div class="small muted">${pool.filter(a=>!isSold(a)).length} head on hand · ${money(onHandCost)} paid for those with a purchase price.</div></div>
+    <div class="card"><div class="bar" style="justify-content:space-between"><b>Expenses</b><button type="button" class="btn primary" id="expAdd">+ Add expense</button></div>
+      ${exps.length?`<div class="tablewrap"><table class="mtable"><thead><tr><th>Date</th><th>What</th><th class="r">Amount</th></tr></thead><tbody>${exps.map(x=>`<tr data-exp="${esc(x.id)}"><td>${esc(shortDate(x.date))}</td><td>${esc(x.category||'')}${x.description?' · '+esc(x.description):''}${x.group?` <span class="muted">(${esc(x.group)})</span>`:''}</td><td class="r">${money(x.amount)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="small muted">No expenses in this period.</div>'}
+    </div>`;
+}
+$('#mYear').addEventListener('change', e=>{ S.mYear=e.target.value; renderMoney(); });
+$('#mGroup').addEventListener('change', e=>{ S.mGroup=e.target.value; renderMoney(); });
+$('#moneyBody').addEventListener('click', e=>{
+  if(e.target.closest('#expAdd')) return openExpense(null);
+  const x=e.target.closest('[data-exp]'); if(x) return openExpense(x.dataset.exp);
+  const r=e.target.closest('tr[data-id]'); if(r) openAnimal(r.dataset.id);
+});
+function openExpense(id){
+  if(!fin()) return;
+  const x = id ? S.expenses.get(id) : {date:today(), group:S.mGroup||''};
+  if(id && !x) return;
+  openSheet(`<div class="sheet-h"><h2>${id?'Expense':'Add expense'}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="xf" class="card" autocomplete="off"><div class="grid2">
+      <label class="f">Date<input id="x-date" type="date" value="${esc(x.date||today())}"></label>
+      <label class="f">Amount ($)<input id="x-amt" type="text" inputmode="decimal" value="${esc(x.amount??'')}"></label>
+      <label class="f">Category<input id="x-cat" type="text" list="x-cats" value="${esc(x.category||'')}"><datalist id="x-cats">${EXP_CATS.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label class="f">Group (optional)<select id="x-group"><option value="">Whole herd</option>${groups().map(g=>`<option ${g===x.group?'selected':''}>${esc(g)}</option>`).join('')}</select></label></div>
+      <label class="f">Description<input id="x-desc" type="text" value="${esc(x.description||'')}" placeholder="e.g. 40 round bales"></label>
+      <div id="x-warn"></div>
+      <div class="bar"><button class="btn primary" type="submit" style="flex:1">Save</button>${id?'<button class="btn danger" type="button" id="x-del">Delete</button>':''}</div>
+    </form>`);
+  const del=$('#x-del'); del && del.addEventListener('click', ()=>{ if(!del.classList.contains('armed')){ del.classList.add('armed'); del.textContent='Tap again to delete'; return; } remove('expenses/'+id); logChange(id,'expense',`Expense: ${x.category||''} ${money(x.amount)}`,'deleted',[]); closeSheet(); toast('Deleted'); });
+  $('#xf').addEventListener('submit', e=>{
+    e.preventDefault(); const amt=parseMoney($('#x-amt').value);
+    if(amt===null||amt===''){ $('#x-warn').innerHTML='<div class="notice warn">Enter the amount, like 1250 or 1250.50.</div>'; return; }
+    const rec={date:$('#x-date').value||today(), amount:amt, category:$('#x-cat').value.trim()||'Other', group:$('#x-group').value, description:$('#x-desc').value.trim(), updatedAt:Date.now(), updatedBy:me()};
+    if(id) patch('expenses/'+id, rec); else { const nid=rid(); put('expenses/'+nid, rec); id=nid; }
+    logChange(id,'expense',`Expense: ${rec.category}${rec.description?' – '+rec.description:''}`,'saved',[{f:'amount',to:rec.amount}]);
+    closeSheet(); toast('Saved');
+  });
+}
+
+// ---------- spreadsheets: import ----------
+let xlsxLoading=null;
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  return xlsxLoading || (xlsxLoading = new Promise((res, rej)=>{ const s=document.createElement('script'); s.src='./xlsx.mini.min.js'; s.onload=()=>res(window.XLSX); s.onerror=()=>{ xlsxLoading=null; rej(new Error('load')); }; document.head.appendChild(s); }));
+}
+async function readSheetFile(file){
+  const name=file.name.toLowerCase();
+  if(name.endsWith('.csv') || name.endsWith('.txt')) return { sheets:{ [file.name]: parseCsv(await file.text()) } };
+  const X = await loadXLSX();
+  const wb = X.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+  const sheets={}; wb.SheetNames.forEach(n=>{ sheets[n]=X.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:''}).filter(r=>r.some(v=>String(v).trim()!=='')); });
+  return { sheets };
+}
+const IMPORT_FIELDS = () => [
+  ['collar','Collar #',['collar','collarno','collarnumber','neckband']], ['kind','Type',['type','kind','class','stockclass','sex']], ['group','Group',['group','herd','pasture','mob','location']],
+  ['brand1','Brand',['brand','brand1','tattooorbrand','tattoo']], ['brand2','2nd brand',['brand2','secondbrand']], ['vid','Visual tag (VID)',['vid','visualtag','tag','eartag','visualid','tagno']],
+  ['eid','EID / RFID',['eid','rfid','ccia','cciatag','electronicid','eidtag','nlis']], ['breed','Breed',['breed']], ['birthDate','Date of birth',['dob','dateofbirth','birthdate','born','birth']],
+  ['collarOn','Collar fitted',['collarfitted','fitted','collaron']], ['notes','Notes',['notes','note','comments','comment','remarks']],
+  ...(fin()?[['purchasePrice','Purchase price',['purchaseprice','price','cost','boughtfor','purchase']], ['purchaseDate','Purchase date',['purchasedate','datebought','bought']], ['salePrice','Sale price',['saleprice','soldfor','sale']], ['saleDate','Sale date',['saledate','datesold','sold']]]:[])
+];
+const normHead = h => String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
+function toISO(v, order){
+  if(v instanceof Date && !isNaN(v)) return v.toLocaleDateString('en-CA');
+  const s=String(v||'').trim(); if(!s) return '';
+  let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if(m){ let [ ,a,b,y]=m; if(y.length===2) y=(Number(y)>50?'19':'20')+y; let mo=a, d=b; if(order==='dmy' || Number(a)>12) { mo=b; d=a; } if(Number(mo)>12) return ''; return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`; }
+  const t=Date.parse(s); return isNaN(t)?'':new Date(t).toLocaleDateString('en-CA');
+}
+function kindOf(v){ const k=String(v||'').toLowerCase(); if(!k) return ''; if(k.startsWith('bull')&&!k.includes('calf')) return 'bull'; if(k.startsWith('heif')) return 'heifer'; if(k.startsWith('steer')) return 'steer'; if(k.includes('calf')) return 'calf'; if(k.startsWith('cow')||k==='f') return 'cow'; return ''; }
+function openImport(){
+  openSheet(`<div id="imp" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>Import a spreadsheet</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card"><div class="small">Choose an Excel (.xlsx) or CSV file with one animal per row and column names in the first row. You’ll match the columns next.</div>
+      <label class="btn primary" for="imp-file" style="text-align:center">Choose file</label><input id="imp-file" type="file" accept=".xlsx,.xlsm,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+      <div id="imp-msg" class="small"></div></div>
+    <div id="imp-map"></div></div>`);
+  $('#imp-file').addEventListener('change', async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    $('#imp-msg').textContent='Reading…';
+    let data; try{ data=await readSheetFile(file); }catch{ $('#imp-msg').textContent='That file couldn’t be read. Save it as .xlsx or .csv and try again.'; return; }
+    const names=Object.keys(data.sheets).filter(n=>data.sheets[n].length>1);
+    if(!names.length){ $('#imp-msg').textContent='No rows found in that file.'; return; }
+    $('#imp-msg').textContent=`${file.name}`;
+    mapStep(data.sheets, names, names[0]);
+  });
+}
+function mapStep(sheets, names, sheetName){
+  const all=sheets[sheetName];
+  let hr=all.findIndex(r=>r.filter(v=>String(v).trim()!=='').length>=3); if(hr<0) hr=0;
+  const rows=all.slice(hr), head=rows[0].map(h=>String(h).trim()), body=rows.slice(1);
+  const isES = head.some(h=>/^neck\s*band$/i.test(h));
+  const F=IMPORT_FIELDS();
+  const guess = aliases => { const i=head.findIndex(h=>aliases.includes(normHead(h))); return i; };
+  const opts = sel => `<option value="-1">— skip —</option>`+head.map((h,i)=>`<option value="${i}" ${i===sel?'selected':''}>${esc(h||'Column '+(i+1))}</option>`).join('');
+  $('#imp-map').innerHTML = `<div class="card">
+    ${isES?'<div class="notice ok">This looks like an eShepherd file. Neckband serials go into Collar #, and rows with no VID, EID or brand are skipped.</div>':''}
+    ${names.length>1?`<label class="f">Sheet<select id="imp-sheet">${names.map(n=>`<option ${n===sheetName?'selected':''}>${esc(n)}</option>`).join('')}</select></label>`:''}
+    <b>Match the columns</b> <span class="small muted">${body.length} rows</span>
+    <div class="grid2">${F.map(([k,l,al])=>`<label class="f">${esc(l)}<select data-map="${k}">${opts(guess(al))}</select></label>`).join('')}</div>
+    <div class="grid2">
+      <label class="f">Match existing animals by<select id="imp-match"><option value="collar">Collar #</option><option value="eid">EID / RFID</option><option value="vid">Visual tag</option><option value="none">Don’t match (always add new)</option></select></label>
+      <label class="f">Dates like 03/04/2025 mean<select id="imp-order"><option value="mdy">Month/Day/Year</option><option value="dmy" ${isES?'selected':''}>Day/Month/Year</option></select></label>
+    </div>
+    <label class="check"><input id="imp-onlysold" type="checkbox"> Include animals that are already sold</label>
+    <div id="imp-preview" class="small"></div>
+    <button class="btn primary" type="button" id="imp-go">Import</button></div>`;
+  const s=$('#imp-sheet'); s && s.addEventListener('change', e=>mapStep(sheets, names, e.target.value));
+  const plan = () => {
+    const map={}; document.querySelectorAll('[data-map]').forEach(el=>{ const i=Number(el.value); if(i>=0) map[el.dataset.map]=i; });
+    const by=$('#imp-match').value, order=$('#imp-order').value, incl=$('#imp-onlysold').checked;
+    const index={}; if(by!=='none') animals().forEach(a=>{ const v=String(a[by]||'').trim().toLowerCase(); if(v && (incl || !isSold(a))) index[v]=a; });
+    const out={add:[], upd:[], skip:0};
+    body.forEach(r=>{
+      const v={}; Object.entries(map).forEach(([k,i])=>{ let x=r[i]; if(x==null) return;
+        if(k==='birthDate'||k==='purchaseDate'||k==='saleDate') x=toISO(x, order);
+        else if(k==='purchasePrice'||k==='salePrice'){ x=parseMoney(x instanceof Date?'':x); if(x===null) x=''; }
+        else if(k==='collarOn') x=/^(y|yes|true|1|fitted|x)$/i.test(String(x).trim());
+        else if(k==='kind') x=kindOf(x);
+        else x=(x instanceof Date?x.toLocaleDateString('en-CA'):String(x)).trim();
+        if(x!=='' && x!==false) v[k]=x; else if(k==='collarOn' && x===false) v[k]=false; });
+      if(!v.brand1 && !v.vid && !v.eid && !(v.collar && (v.group||v.notes||v.kind||v.breed))){ out.skip++; return; }
+      const key = by!=='none' ? String(v[by]||'').trim().toLowerCase() : '';
+      const hit = key && index[key];
+      if(hit){ const ch={}; Object.entries(v).forEach(([k,x])=>{ if((hit[k]??'')!==x && !(k==='collarOn' && !!hit[k]===x)) ch[k]=x; }); if(Object.keys(ch).length) out.upd.push([hit,ch]); }
+      else { out.add.push(v); if(key) index[key]=v; }
+    });
+    return out;
+  };
+  const prev = () => { const p=plan(); $('#imp-preview').innerHTML = `<b>${p.add.length}</b> new animals, <b>${p.upd.length}</b> existing animals updated${p.skip?`, ${p.skip} rows skipped (no collar, brand or tag)`:''}.`; };
+  $('#imp-map').addEventListener('change', prev); prev();
+  $('#imp-go').addEventListener('click', ()=>{
+    const p=plan(); const now=Date.now();
+    p.add.forEach(v=>outbox.push({op:'set', path:'animals/'+rid(), data:{kind:'cow', collarOn:false, ...v, kind:v.kind||'cow', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}));
+    p.upd.forEach(([a,ch])=>outbox.push({op:'update', path:'animals/'+a.id, data:{...ch, updatedAt:now, updatedBy:me()}, base:baseOf('animals/'+a.id, ch), t:now}));
+    saveOutbox();
+    logChange('import','import',`Spreadsheet import: ${p.add.length} added, ${p.upd.length} updated`,'imported',[]);
+    closeSheet(); toast(`Imported: ${p.add.length} added, ${p.upd.length} updated`);
+  });
+}
+
+// ---------- spreadsheets: export ----------
+const animalRow = (a, F) => Object.assign({
+  'Type':KIND[a.kind]||'Cow', 'Collar':a.collar||'', 'Collar fitted':a.collarOn?'Yes':'No', 'Group':a.group||'', 'Brand':a.brand1||'', '2nd brand':a.brand2||'',
+  'Visual tag (VID)':a.vid||'', 'EID / RFID':a.eid||'', 'Breed':a.breed||'', 'Date of birth':a.birthDate||'', 'Notes':a.notes||'' },
+  F ? {'Purchase price':a.purchasePrice??'', 'Purchase date':a.purchaseDate||'', 'Sale price':a.salePrice??'', 'Sale date':a.saleDate||''} : {'Sold':isSold(a)?'Yes':''},
+  (()=>{ const b=breedingFor(a); return {'Breeding status':b?BSTATUS[b.status][0]:'', 'Calving window':b&&b.from&&b.status!=='calved'&&b.status!=='open'?`${b.from} to ${b.to}`:'', 'On withdrawal until':withdrawalUntil(a.id)}; })(),
+  {'Last updated':a.updatedAt?new Date(a.updatedAt).toLocaleString():''});
+function exportPool(){ const w=$('#ex-which')?.value||'onhand'; return animals().filter(a=> w==='all' ? true : w==='onhand' ? !isSold(a) : (!isSold(a) && a.group===w)).sort(byCollar); }
+function toCSV(rows){ if(!rows.length) return ''; const h=Object.keys(rows[0]); return [h.map(csvCell).join(',')].concat(rows.map(r=>h.map(k=>csvCell(r[k])).join(','))).join('\n'); }
+// eShepherd's Bulk Create file: row 1 instructions, row 2 headers (Action, Animal ID, Neckband, EID*, VID*, Breed, Stock Class,
+// Date of Birth, Tattoo or Brand, Weight (lb), Weighed date, Expected Weight Gain (lb), Pregnancy Status, Note). Dates dd-MM-yyyy.
+const ES_HEAD = ['Action','Animal ID','Neckband','EID*','VID*','Breed','Stock Class','Date of Birth','Tattoo or Brand','Weight (lb)','Weighed date','Expected Weight Gain (lb)','Pregnancy Status','Note'];
+const esVid = v => String(v||'').replace(/[^A-Za-z0-9]/g,'').slice(0,20);
+function esPreg(a){
+  const b=breedingFor(a); if(!b) return '';
+  if(b.status==='pregnant') return 'Pregnant';
+  if(b.status==='exposed') return 'Joined';
+  if(b.status==='open') return 'Empty';
+  if(b.status==='calved' && daysBetween(b.calving.date, today())<=210) return 'Wet/Lactating';
+  return '';
+}
+// Which Herd Book animal wears this neckband? Collar list serial first, then the collar number itself.
+function animalForNeckband(serial){
+  const digits = s => String(s).replace(/\D/g,'').replace(/^0+/,'');
+  const sv=String(serial).trim(); if(!sv) return null;
+  const live=onHand().filter(a=>a.collar), w=wearers();
+  const c=collarList().find(c=>c.neckband && digits(c.neckband)===digits(sv));
+  if(c){ const a=(w.get(ckey(c.number))||[])[0]; if(a) return a; }
+  return live.find(a=>String(a.collar).trim()===sv) || live.find(a=>digits(a.collar) && digits(a.collar)===digits(sv)) || null;
+}
+function openExport(){
+  openSheet(`<div id="exs" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>Export</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card"><b>eShepherd collars</b>
+      <div class="small">In eShepherd, tap <b>+ › Bulk Create – Download File</b> and choose that file here. Herd Book fills in each neckband’s animal (VID, EID, brand, breed, stock class, birth date, pregnancy status, group) and gives it back. Upload it with <b>Bulk Create – Upload File</b>.</div>
+      <label class="f">eShepherd VID comes from<select id="ex-vid"><option value="vid">Visual tag (VID) field</option><option value="collar">Collar number</option><option value="brand1">Brand</option></select></label>
+      <label class="f">eShepherd Note gets<select id="ex-note"><option value="group">Group name</option><option value="notes">Herd Book notes</option><option value="keep">Leave as it is</option></select></label>
+      <label class="btn primary" for="ex-esfile" style="text-align:center">Choose eShepherd file</label><input id="ex-esfile" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+      <div id="ex-msg" class="small"></div></div>
+    <div class="card"><label class="f">Which animals<select id="ex-which"><option value="onhand">On hand</option><option value="all">All, including sold</option>${groups().map(g=>`<option value="${esc(g)}">Group: ${esc(g)}</option>`).join('')}</select></label>
+      ${!fin()?'<div class="small muted">Exports from this phone don’t include prices.</div>':''}
+      <button class="btn primary" type="button" data-ex="xlsx">Everything as an Excel workbook</button>
+      <div class="small muted">Sheets for animals, treatments, breeding, collars${fin()?', expenses':''}.</div>
+      <button class="btn" type="button" data-ex="csv">Animal list (CSV)</button>
+      <button class="btn" type="button" data-ex="json">Full backup file (JSON)</button></div></div>`);
+  const msg = t => { $('#ex-msg').innerHTML=t; };
+  $('#exs').addEventListener('click', async e=>{
+    const b=e.target.closest('[data-ex]'); if(!b) return;
+    const F=fin(), pool=exportPool(), stamp=today();
+    if(b.dataset.ex==='csv') return saveFile(`herd-${stamp}.csv`, toCSV(pool.map(a=>animalRow(a,F))), 'text/csv');
+    if(b.dataset.ex==='json') return saveFile(`herd-backup-${stamp}.json`, JSON.stringify({exported:new Date().toISOString(), ranch:cfg.ranchName||'', animals:animals(), exposures:[...S.exposures.values()], collars:[...S.collars.values()], treatments:[...S.treatments.values()], pregnancy:[...S.preg.values()], ...(F?{expenses:[...S.expenses.values()]}:{})},null,2), 'application/json');
+    if(b.dataset.ex==='xlsx'){
+      let X; try{ X=await loadXLSX(); }catch{ toast('Excel export needs the app to have loaded once with signal.'); return; }
+      const wb=X.utils.book_new(); const add=(n,rows)=>X.utils.book_append_sheet(wb, X.utils.json_to_sheet(rows.length?rows:[{'':'(none)'}]), n);
+      add('Animals', pool.map(a=>animalRow(a,F)));
+      add('Treatments', treatments().map(t=>Object.assign({'Date':t.date,'Product':t.product,'Type':TTYPE[t.kind]||'','Dose':t.dose||'','Route':t.route||'','Withdrawal days':t.withdrawalDays??'','Withdrawal ends':withdrawalEnd(t),'Booster due':t.boosterDue||'','Batch':t.batch||'','Given by':t.givenBy||'','Head':(t.animalIds||[]).length,'Animals':(t.animalIds||[]).map(id=>label(S.animals.get(id))).join(', '),'Notes':t.notes||''}, F?{'Cost':t.cost??''}:{})));
+      add('Breeding', onHand().map(a=>({a,b:breedingFor(a)})).filter(x=>x.b).map(({a,b})=>({'Animal':label(a),'Brand':a.brand1||'','Status':BSTATUS[b.status][0],'Exposed from':b.ex?b.ex.start:'','Exposed to':b.ex?(b.ex.end||'still in'):'','Bull':b.ex?(b.ex.bullId?label(S.animals.get(b.ex.bullId)):'AI'):'','Due from':b.from,'Due to':b.to,'Preg check':b.check?`${b.check.date} ${b.check.result}`:'','Calved':b.calving?b.calving.date:''})));
+      add('Collars', collarList().map(c=>{ const w=wearers(); const a=(w.get(ckey(c.number))||[])[0]; return {'Collar':c.number,'eShepherd neckband':c.neckband||'','Status':STATE[collarState(c,w)],'On animal':a?label(a):'','Brand':a?a.brand1||'':'','Note':c.note||''}; }));
+      if(F) add('Expenses', [...S.expenses.values()].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(x=>({'Date':x.date,'Category':x.category||'','Description':x.description||'','Group':x.group||'','Amount':x.amount})));
+      return saveFile(`herd-book-${stamp}.xlsx`, X.write(wb,{bookType:'xlsx',type:'array'}), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+  });
+  $('#ex-esfile').addEventListener('change', async e=>{
+    const file=e.target.files[0]; e.target.value=''; if(!file) return;
+    msg('Reading…');
+    let X; try{ X=await loadXLSX(); }catch{ msg('This needs the app to have loaded once with signal.'); return; }
+    let wb; try{ wb = file.name.toLowerCase().endsWith('.csv') ? X.read(await file.text(), {type:'string', raw:true}) : X.read(await file.arrayBuffer(), {type:'array', cellDates:true}); }catch{ msg('That file couldn’t be read.'); return; }
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=X.utils.sheet_to_json(ws,{header:1, raw:false, defval:''});
+    const hi=rows.findIndex(r=>r.some(c=>/^\s*neck\s*band\s*$/i.test(String(c))));
+    if(hi<0){ msg('<span class="warn-text">No “Neckband” column found. Is this the eShepherd Bulk Create file?</span>'); return; }
+    const head=rows[hi].map(c=>String(c).trim()); const col=re=>head.findIndex(h=>re.test(h));
+    const c={action:col(/^action$/i), aid:col(/^animal\s*id$/i), nb:col(/^neck\s*band$/i), eid:col(/^eid/i), vid:col(/^vid/i), breed:col(/^breed$/i), cls:col(/stock\s*class/i), dob:col(/birth/i), brand:col(/tattoo|brand/i), preg:col(/pregnan/i), note:col(/^note/i)};
+    const vidFrom=$('#ex-vid').value, noteFrom=$('#ex-note').value;
+    const setStr=(r,ci,v)=>{ if(ci<0) return; const ref=X.utils.encode_cell({r,c:ci}); if(v===''||v==null){ delete ws[ref]; return; } ws[ref]={t:'s', v:String(v)}; };
+    const setDate=(r,ci,iso)=>{ if(ci<0||!iso) return; const ref=X.utils.encode_cell({r,c:ci}); const d=new Date(iso+'T00:00:00Z'); ws[ref]={t:'n', v:(d - Date.UTC(1899,11,30))/86400000, z:'dd-mm-yyyy'}; };
+    let filled=0, seen=new Set(); const noCow=[], noId=[];
+    for(let r=hi+1; r<rows.length; r++){
+      const nb=String(rows[r][c.nb]||'').trim(); if(!nb) continue;
+      const a=animalForNeckband(nb); if(!a){ noCow.push(nb); continue; }
+      if(seen.has(a.id)){ noCow.push(nb+' (cow already on another neckband)'); continue; } seen.add(a.id);
+      const vid=esVid(a[vidFrom]), eid=String(a.eid||'').trim();
+      if(!vid && !eid){ noId.push(a.collar||a.brand1||label(a)); continue; }
+      const fitted = c.aid>=0 && String(rows[r][c.aid]).trim() && !/unfitted/i.test(String(rows[r][c.aid]));
+      setStr(r,c.action, fitted?'EDIT':'CREATE');
+      setStr(r,c.vid, vid); setStr(r,c.eid, eid);
+      if(a.breed) setStr(r,c.breed, a.breed.slice(0,50));
+      setStr(r,c.cls, KIND[a.kind]||'Cow');
+      if(a.birthDate) setDate(r,c.dob, a.birthDate);
+      const br=[a.brand1,a.brand2].filter(Boolean).join(' / ').slice(0,50); if(br) setStr(r,c.brand, br);
+      const pg=esPreg(a); if(pg) setStr(r,c.preg, pg);
+      if(noteFrom!=='keep'){ const nv=String(noteFrom==='group'?a.group||'':a.notes||'').slice(0,300); if(nv) setStr(r,c.note, nv); }
+      filled++;
+    }
+    msg(`<b>${filled}</b> neckbands filled.${noCow.length?` ${noCow.length} neckbands have no matching animal in Herd Book${noCow.length<=8?' ('+esc(noCow.join(', '))+')':''}. Give the collar its neckband serial in the Collars tab, or use the serial as the collar number.`:''}${noId.length?` <span class="warn-text">${noId.length} animals need a VID or EID first (${esc(noId.slice(0,8).join(', '))}${noId.length>8?'…':''}).</span>`:''}`);
+    if(filled) saveFile(file.name.replace(/\.(csv|xlsx)$/i,'')+'-filled.xlsx', X.write(wb,{bookType:'xlsx',type:'array'}), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  });
+}
+document.addEventListener('click', e=>{ if(e.target.closest('[data-open-import]')) openImport(); if(e.target.closest('[data-open-export]')) openExport(); });
+
 
 // ---------- boot ----------
 function renderAll(){
-  if(S.tab==='herd') renderHerd(); else if(S.tab==='yard') renderYard(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='bulls') renderBulls(); else renderLog();
+  if(S.tab==='herd') renderHerd(); else if(S.tab==='yard') renderYard(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='breeding') renderBreeding(); else if(S.tab==='health') renderHealth(); else if(S.tab==='money') renderMoney(); else renderLog();
 }
 setTab(); recompute(); renderSetup();
 if(!storageOk) toast('This browser isn’t keeping a copy on the phone. Use the home-screen app instead.');
