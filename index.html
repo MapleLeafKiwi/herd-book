@@ -128,6 +128,10 @@ label.check input{width:24px;height:24px}
 .seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.hrow h1{white-space:nowrap;flex:none}
+.sync{min-width:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.qr{background:#fff;padding:10px;border-radius:12px;width:min(240px,100%)}
+.qr svg{display:block;width:100%;height:auto}
 .sync.off{color:var(--warn);font-weight:700}
 .conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
 .ro{margin-bottom:12px}
@@ -167,7 +171,7 @@ label.check input{width:24px;height:24px}
 
 <main class="wrap">
   <button type="button" class="conflict-bar" id="conflictBar" hidden></button>
-  <div class="ro" id="setupBanner" hidden>This phone isn’t connected to the herd’s Google Sheet yet, so changes stay on this phone. Connect it in <a href="#log">Log › Phone setup</a>.</div>
+  <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#log">Log › Ranch &amp; phone setup</a>.</div>
 
   <section data-view="herd">
     <div class="bar">
@@ -214,20 +218,24 @@ label.check input{width:24px;height:24px}
   </section>
 
   <section data-view="log" hidden>
-    <h2>Phone setup</h2>
+    <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">
+      <div id="ranchLine"></div>
       <label class="f">Your name (shown in the change log)<input id="cfg-name" type="text" autocomplete="name"></label>
-      <label class="f">Farm code<input id="cfg-code" type="text" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-      <details><summary class="small">Sync address</summary>
-        <label class="f" style="margin-top:8px">Google Apps Script web app URL<input id="cfg-url" type="url" inputmode="url"></label>
-      </details>
-      <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
+      <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save name</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
       <div class="small" id="cfg-status"></div>
-      <div id="shareBox" hidden style="display:flex;flex-direction:column;gap:8px">
-        <div class="small"><b>Link for another phone.</b> Open it on that phone, then Add to Home Screen. On iPhone they may still need to type the farm code once.</div>
-        <input id="shareLink" type="text" readonly>
-        <div><button class="btn" id="copyLink" type="button">Copy link</button></div>
+      <div id="shareBox" hidden data-share style="display:flex;flex-direction:column;gap:10px">
+        <b>Add someone to this ranch</b>
+        <div class="small muted">They scan this with their phone camera, open the link, then tap Add to Home Screen. Or send them the link.</div>
+        <div data-body style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
+      <details><summary class="small">Change ranch or sync address</summary>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <div><button class="btn" id="switchRanch" type="button">Join or start a different ranch</button></div>
+          <label class="f">Sync address<input id="cfg-url" type="url" inputmode="url"></label>
+          <div><button class="btn" id="cfg-url-save" type="button">Save sync address</button></div>
+        </div>
+      </details>
     </div>
     <h2>Backup</h2>
     <div class="card">
@@ -251,6 +259,7 @@ label.check input{width:24px;height:24px}
 <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="qrcode.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

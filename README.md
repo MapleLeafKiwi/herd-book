@@ -1,8 +1,8 @@
 # Herd Book
 
-Offline-first cattle tracker: herd, collars, bulls, purchase and sale prices, with sync to a Google Sheet.
+Offline-first cattle tracker for one or many ranches: herd, collars, bulls, purchase and sale prices. Works with no signal and syncs to Google Sheets when it has signal.
 
 - **App:** https://mapleleafkiwi.github.io/herd-book/ (open on a phone, then Add to Home Screen)
-- **Sheet script:** `sheet-script/Code.gs` is pasted into the Google Sheet (Extensions › Apps Script) and deployed as a web app (Execute as: Me, Who has access: Anyone). The real farm code is set only in the copy inside the sheet, not here.
+- **Sync script:** `sheet-script/Code.gs` goes into a Google Sheet ("Herd Book admin") via Extensions › Apps Script, deployed as a web app (Execute as: Me, Who has access: Anyone). The real sign-up code is set only in the copy inside that sheet.
 
-Each phone enters its name and the farm code once (Log › Phone setup). Data is kept on the phone and synced to the sheet whenever there is signal.
+**Ranches.** In the app, "Start a new ranch" (needs the sign-up code) creates the ranch's own Google Sheet and a row in the admin sheet's **Ranches** tab. Untick *Active* there to switch a ranch off. Crew join with the ranch's link or QR code (Log › Ranch & phone setup).

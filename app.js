@@ -143,11 +143,14 @@ async function sync(){
       try{ res = await post({code:cfg.code, since:mirror.rev||0, ops}); } finally { inflight = 0; }
       if(res && res.ok && Array.isArray(res.conflicts) && res.conflicts.length) takeConflicts(res.conflicts, batch);
       if(!res || !res.ok){
-        lastErr = res && res.error==='bad_code' ? 'The farm code is wrong. Check it in Log › Phone setup.' : res && res.error==='busy' ? 'The sheet is busy. Trying again shortly.' : 'The sheet couldn’t take the changes. Trying again shortly.';
+        lastErr = res && res.error==='bad_code' ? 'That ranch code isn’t recognised. Check it in Log › Phone setup.'
+          : res && res.error==='ranch_off' ? `${res.ranch||'This ranch'} is switched off or waiting for approval.`
+          : res && res.error==='busy' ? 'The sheet is busy. Trying again shortly.' : 'The sheet couldn’t take the changes. Trying again shortly.';
         break;
       }
       outbox.splice(0, batch.length); saveOutbox();
       mergeChanges(res.changes); mirror.rev = res.rev || mirror.rev;
+      if(res.ranch && res.ranch!==cfg.ranchName){ cfg.ranchName=res.ranch; LS.set(K.cfg,cfg); }
       S.lastSync = Date.now(); lastErr=''; saveMirror();
     } while(outbox.length);
   }catch(e){
@@ -172,7 +175,7 @@ function updateSync(){
   else if(lastErr){ t = n ? `${n} waiting · sync problem` : 'Sync problem'; off=true; }
   else if(n) t = `${n} change${n>1?'s':''} waiting to send`;
   else t = S.lastSync ? 'Synced '+ago(S.lastSync) : 'Ready';
-  el.textContent=t; el.classList.toggle('off',off);
+  el.textContent=(cfg.ranchName?cfg.ranchName+' · ':'')+t; el.classList.toggle('off',off);
   $('#setupBanner').hidden = !!(syncUrl() && cfg.code);
 }
 
@@ -562,47 +565,120 @@ function logHtml(items){
 }
 function renderLog(){ $('#logList').innerHTML = logHtml(S.history.slice(0,150)); renderSetup(); }
 
-// ---------- phone setup ----------
+// ---------- ranch & phone setup ----------
 function shareLink(){
   if(!syncUrl() || !cfg.code) return '';
-  return location.origin + location.pathname + '?s=' + encodeURIComponent(syncUrl()) + '&k=' + encodeURIComponent(cfg.code);
+  const s = (cfg.url && cfg.url!==SYNC_URL) || !SYNC_URL ? 's=' + encodeURIComponent(syncUrl()) + '&' : '';
+  return location.origin + location.pathname + '?' + s + 'k=' + encodeURIComponent(cfg.code);
 }
-function renderSetup(){
-  const st=$('#cfg-status'); if(!st) return;
-  const nameEl=$('#cfg-name'), urlEl=$('#cfg-url'), codeEl=$('#cfg-code');
-  if(document.activeElement!==nameEl) nameEl.value = cfg.name||'';
-  if(document.activeElement!==urlEl) urlEl.value = cfg.url||SYNC_URL||'';
-  if(document.activeElement!==codeEl) codeEl.value = cfg.code||'';
-  st.textContent = !(syncUrl()&&cfg.code) ? 'Not connected. Changes are kept on this phone only.'
-    : lastErr ? lastErr
-    : S.lastSync ? `Connected. Last synced ${new Date(S.lastSync).toLocaleString()}.` : 'Connected. Tap “Sync now” to load the herd.';
-  const link=shareLink(); $('#shareBox').hidden=!link; $('#shareLink').value=link;
+function drawQR(el, text){
+  el.innerHTML='';
+  if(!text || typeof qrcode!=='function') return;
+  try{ const q=qrcode(0,'M'); q.addData(text); q.make(); el.innerHTML=q.createSvgTag({cellSize:4, margin:2, scalable:true}); }catch{}
 }
-$('#cfg-save').addEventListener('click', ()=>{
-  cfg.name=$('#cfg-name').value.trim(); cfg.url=$('#cfg-url').value.trim(); cfg.code=$('#cfg-code').value.trim();
-  if(cfg.url===SYNC_URL) delete cfg.url;
-  LS.set(K.cfg,cfg); lastErr=''; renderSetup(); updateSync(); toast('Saved'); sync();
-});
-$('#syncNow').addEventListener('click', ()=>{ if(!(syncUrl()&&cfg.code)){ toast('Enter the farm code first'); return; } sync(); });
-$('#copyLink').addEventListener('click', async ()=>{
-  const el=$('#shareLink');
+function shareBlock(){
+  return `<div class="qr" data-qr></div>
+    <div class="small">Ranch code: <b>${esc(cfg.code)}</b></div>
+    <input type="text" readonly value="${esc(shareLink())}" data-link>
+    <div class="fab-row"><button class="btn" type="button" data-copy>Copy link</button></div>`;
+}
+async function copyFrom(btn){
+  const el = btn.closest('[data-share]').querySelector('[data-link]');
   try{ await navigator.clipboard.writeText(el.value); toast('Link copied'); }
   catch{ el.focus(); el.select(); toast('Link selected. Copy it from the menu.'); }
-});
-function firstRun(){
-  if(cfg.name && cfg.code) return;
-  openSheet(`<div style="display:flex;flex-direction:column;gap:14px"><div class="sheet-h"><h2>Set up this phone</h2><button class="x" type="button" aria-label="Close">×</button></div>
-    <form id="fr" class="card">
-      <label class="f">Your name<input id="fr-name" type="text" autocomplete="name" value="${esc(cfg.name||'')}" placeholder="Shown next to the changes you make"></label>
-      <label class="f">Farm code<input id="fr-code" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(cfg.code||'')}" placeholder="From whoever set up the herd"></label>
-      ${!syncUrl()?`<label class="f">Sync address<input id="fr-url" type="url" placeholder="https://script.google.com/…"></label>`:''}
-      <div class="small muted">The farm code connects this phone to the herd’s Google Sheet. You only enter it once.</div>
-      <button class="btn primary" type="submit">Start</button>
+}
+document.addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if(b) copyFrom(b); });
+
+function renderSetup(){
+  const st=$('#cfg-status'); if(!st) return;
+  const nameEl=$('#cfg-name'), urlEl=$('#cfg-url');
+  if(document.activeElement!==nameEl) nameEl.value = cfg.name||'';
+  if(document.activeElement!==urlEl) urlEl.value = cfg.url||SYNC_URL||'';
+  $('#ranchLine').innerHTML = cfg.code ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div>` : `<b>Not part of a ranch yet.</b> <button type="button" class="btn" id="joinNow">Join or start a ranch</button>`;
+  st.textContent = !(syncUrl()&&cfg.code) ? 'Changes are kept on this phone only until it joins a ranch.'
+    : lastErr ? lastErr
+    : S.lastSync ? `Last synced ${new Date(S.lastSync).toLocaleString()}.` : 'Tap “Sync now” to load the herd.';
+  const box=$('#shareBox'), link=shareLink();
+  box.hidden=!link;
+  if(link && box.dataset.for!==link){ box.dataset.for=link; box.querySelector('[data-body]').innerHTML=shareBlock(); drawQR(box.querySelector('[data-qr]'), link); }
+}
+$('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#joinNow')) openStart(true); });
+$('#cfg-save').addEventListener('click', ()=>{ cfg.name=$('#cfg-name').value.trim(); LS.set(K.cfg,cfg); toast('Saved'); renderSetup(); });
+$('#cfg-url-save').addEventListener('click', ()=>{ const u=$('#cfg-url').value.trim(); if(u && u!==SYNC_URL) cfg.url=u; else delete cfg.url; LS.set(K.cfg,cfg); lastErr=''; toast('Saved'); renderSetup(); sync(); });
+$('#syncNow').addEventListener('click', ()=>{ if(!(syncUrl()&&cfg.code)){ openStart(true); return; } sync(); });
+$('#switchRanch').addEventListener('click', ()=>openStart(true));
+
+// Move this phone to a different ranch. Never throws away unsent changes from a ranch it already belongs to.
+function switchTo(code, ranchName){
+  code = String(code||'').trim().toLowerCase();
+  if(!code) return 'Enter the ranch code.';
+  if(code===cfg.code){ if(ranchName) cfg.ranchName=ranchName; LS.set(K.cfg,cfg); return ''; }
+  if(cfg.code && outbox.length) return `This phone has ${outbox.length} change${outbox.length>1?'s':''} for ${cfg.ranchName||'its ranch'} that haven’t been sent yet. Get signal and sync before switching.`;
+  if(cfg.code){ mirror.animals={}; mirror.exposures={}; mirror.collars={}; mirror.history=[]; outbox=[]; saveOutbox(); conflicts=[]; saveConflicts(); }
+  mirror.rev=0; S.lastSync=0; saveMirror();
+  cfg.code=code; cfg.ranchName=ranchName||''; LS.set(K.cfg,cfg); lastErr='';
+  recompute(); renderSetup();
+  return '';
+}
+function openStart(force){
+  if(!force && cfg.name && cfg.code) return;
+  const fromLink = !!cfg.code && !force;
+  openSheet(`<div style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>${fromLink?'Welcome to Herd Book':'Set up this phone'}</h2>${force?'<button class="x" type="button" aria-label="Close">×</button>':''}</div>
+    <form id="stf" class="card" autocomplete="off">
+      <label class="f">Your name<input id="st-name" type="text" autocomplete="name" value="${esc(cfg.name||'')}" placeholder="Shown next to the changes you make"></label>
+      ${fromLink ? `<div class="small muted">This phone will join the ranch from your link.</div>` : `
+      <div class="seg" id="st-mode"><button type="button" data-m="join" aria-pressed="true">Join a ranch</button><button type="button" data-m="start" aria-pressed="false">Start a new ranch</button></div>
+      <div id="st-join"><label class="f">Ranch code<input id="st-code" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="From someone on the ranch"></label></div>
+      <div id="st-start" hidden style="display:flex;flex-direction:column;gap:10px">
+        <label class="f">Ranch name<input id="st-ranch" type="text" placeholder="e.g. Willow Creek Ranch"></label>
+        <label class="f">Sign-up code<input id="st-signup" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="From whoever runs Herd Book"></label>
+        <div class="small muted">Starting a ranch needs signal. It creates the ranch’s own Google Sheet.</div>
+      </div>`}
+      ${!syncUrl()?`<label class="f">Sync address<input id="st-url" type="url" placeholder="https://script.google.com/…"></label>`:''}
+      <div id="st-msg"></div>
+      <button class="btn primary" type="submit" id="st-go">Start</button>
+      ${!force?'<button class="btn" type="button" id="st-skip">Not now, keep records on this phone</button>':''}
     </form></div>`);
-  $('#fr').addEventListener('submit', e=>{ e.preventDefault();
-    cfg.name=$('#fr-name').value.trim(); cfg.code=$('#fr-code').value.trim();
-    const u=$('#fr-url'); if(u && u.value.trim()) cfg.url=u.value.trim();
-    LS.set(K.cfg,cfg); closeSheet(); updateSync(); renderSetup(); sync(); });
+  let mode='join';
+  const m=$('#st-mode');
+  m && m.addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m;
+    m.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b)); $('#st-join').hidden=mode!=='join'; $('#st-start').hidden=mode!=='start'; });
+  const skip=$('#st-skip'); skip && skip.addEventListener('click', ()=>{ cfg.name=$('#st-name').value.trim()||cfg.name; LS.set(K.cfg,cfg); closeSheet(); renderSetup(); });
+  const say = (t, ok) => { $('#st-msg').innerHTML = t ? `<div class="notice ${ok?'ok':'warn'}">${esc(t)}</div>` : ''; };
+  $('#stf').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const name=$('#st-name').value.trim(); if(!name){ say('Enter your name.'); return; }
+    cfg.name=name;
+    const u=$('#st-url'); if(u && u.value.trim()) cfg.url=u.value.trim();
+    LS.set(K.cfg,cfg);
+    if(fromLink){ closeSheet(); renderSetup(); sync(); return; }
+    if(!syncUrl()){ say('Enter the sync address.'); return; }
+    if(mode==='join'){
+      const err=switchTo($('#st-code').value); if(err){ say(err); return; }
+      closeSheet(); toast('Joining ranch…'); sync(); return;
+    }
+    const ranch=$('#st-ranch').value.trim(), signup=$('#st-signup').value.trim();
+    if(!ranch || !signup){ say('Enter the ranch name and the sign-up code.'); return; }
+    if(cfg.code && outbox.length){ say(`This phone has ${outbox.length} unsent changes for ${cfg.ranchName||'its ranch'}. Sync before starting a new ranch.`); return; }
+    if(navigator.onLine===false){ say('Starting a ranch needs signal. Try again when you have it.'); return; }
+    const go=$('#st-go'); go.disabled=true; say('Creating the ranch…', true);
+    let res=null;
+    try{ res=await post({action:'createRanch', signup, name:ranch, by:name}); }catch{}
+    go.disabled=false;
+    if(!res){ say('Couldn’t reach the sheet. Starting a ranch needs signal.'); return; }
+    if(!res.ok){ say(res.error==='bad_signup'?'That sign-up code isn’t right.':'The ranch couldn’t be created. Try again.'); return; }
+    switchTo(res.code, res.ranch);
+    openSheet(`<div style="display:flex;flex-direction:column;gap:14px" data-share>
+      <div class="sheet-h"><h2>${esc(res.ranch)} is ready</h2><button class="x" type="button" aria-label="Close">×</button></div>
+      <div class="small">${res.active===false?'It will start syncing once it’s approved. ':''}Add your crew: they scan this with their phone camera, open the link and tap Add to Home Screen.</div>
+      ${shareBlock()}
+      <button class="btn primary" type="button">Done</button>
+    </div>`);
+    drawQR($('#sheet [data-qr]'), shareLink());
+    $('#sheet .btn.primary').addEventListener('click', closeSheet);
+    sync();
+  });
 }
 
 // ---------- sheet ----------
@@ -825,7 +901,7 @@ function renderAll(){
 }
 setTab(); recompute(); renderSetup();
 if(!storageOk) toast('This browser isn’t keeping a copy on the phone. Use the home-screen app instead.');
-firstRun();
+openStart(false);
 sync();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 window.__herdbook = { sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg };

@@ -1,17 +1,19 @@
 /**
- * Herd Book sync — receives changes from every phone and keeps them in this Google Sheet.
+ * Herd Book sync — one script for every ranch.
  *
  * Setup (once):
- *   1. In the Google Sheet: Extensions › Apps Script. Delete what's there and paste this whole file. Save.
- *   2. Deploy › New deployment › type "Web app".
- *        Execute as: Me      Who has access: Anyone
- *      Deploy, allow access when Google asks, and copy the Web app URL.
- *   3. Put that URL in Herd Book (Log › Phone setup › Sync address).
+ *   1. Make a Google Sheet called "Herd Book admin". Extensions › Apps Script. Replace everything with this file.
+ *      Set SIGNUP_CODE below, then Save.
+ *   2. Deploy › New deployment › gear › Web app.  Execute as: Me   Who has access: Anyone.  Deploy, allow access,
+ *      copy the Web app URL.
  *
- * After editing this file later: Deploy › Manage deployments › edit (pencil) › Version: New version › Deploy.
- * That keeps the same URL.
+ * Running it:
+ *   - Ranches sign themselves up in the app with the sign-up code. Each ranch gets its own Google Sheet in your Drive
+ *     and a row in the "Ranches" tab of this sheet. Untick "Active" on a row to switch that ranch off.
+ *   - After editing this file: Deploy › Manage deployments › pencil › Version: New version › Deploy (same URL).
  */
-const FARM_CODE = 'CHANGE-ME';   // phones must send this code; change it here to lock old phones out
+const SIGNUP_CODE = 'CHANGE-ME';   // give this only to people allowed to start a ranch
+const NEW_RANCHES_ACTIVE = true;        // false = new ranches wait until you tick "Active" in the Ranches tab
 
 const TABS = { animals: 'Animals', exposures: 'Bull exposures', collars: 'Collars', history: 'Change log' };
 const ORDER = {
@@ -23,43 +25,92 @@ const ORDER = {
 const NUM  = ['purchasePrice','salePrice','createdAt','updatedAt','at','_rev'];
 const BOOL = ['collarOn','_deleted'];
 const JSONF = ['cowIds','changes'];
+const RANCH_HEAD = ['Ranch', 'Ranch code', 'Active', 'Sheet', 'Started by', 'Started', 'Sheet ID'];
+const WORDS = ['tag','calf','bale','gate','chute','creek','range','ridge','corral','spur','prairie','hay','brand','rope','yard','herd','bull','heifer','saddle','fence','cedar','willow','aspen','badger','coulee','butte','sage','stone','river','meadow'];
 
 function doGet() { return out_({ ok: true, app: 'Herd Book sync' }); }
 
 function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: 'bad_request' }); }
-  if (String(body.code || '') !== FARM_CODE) return out_({ ok: false, error: 'bad_code' });
-
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) return out_({ ok: false, error: 'busy' });
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const props = PropertiesService.getScriptProperties();
-    const tables = {};
-    const table = col => tables[col] || (tables[col] = load_(ss, col));
-    const ops = Array.isArray(body.ops) ? body.ops : [];
-    let rev = Number(props.getProperty('rev') || 0);
-    const conflicts = [];
-
-    if (ops.length) {
-      rev = Math.max(Date.now(), rev + 1);
-      ops.forEach(op => { if (op && TABS[op.col] && op.id) apply_(table(op.col), op, rev, conflicts); });
-      Object.keys(tables).forEach(k => save_(tables[k]));
-      props.setProperty('rev', String(rev));
-    }
-
-    const since = Number(body.since) || 0;
-    const changes = {};
-    Object.keys(TABS).forEach(col => {
-      let rows = table(col).rows.filter(r => Number(r._rev) > since);
-      if (col === 'history' && rows.length > 500) rows = rows.slice(-500);
-      changes[col] = rows.map(decode_);
-    });
-    return out_({ ok: true, rev: rev, changes: changes, conflicts: conflicts });
+    if (body.action === 'createRanch') return out_(createRanch_(body));
+    return out_(sync_(body));
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------- ranches ----------
+function ranchesSheet_() {
+  const admin = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = admin.getSheetByName('Ranches');
+  if (!sh) {
+    sh = admin.insertSheet('Ranches', 0);
+    sh.getRange(1, 1, 1, RANCH_HEAD.length).setValues([RANCH_HEAD]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function ranches_() {
+  const sh = ranchesSheet_(), n = sh.getLastRow();
+  if (n < 2) return [];
+  return sh.getRange(2, 1, n - 1, RANCH_HEAD.length).getValues().map((r, i) => ({
+    row: i + 2, name: String(r[0]), code: String(r[1]).trim().toLowerCase(),
+    active: r[2] === true || String(r[2]).toLowerCase() === 'true', sheetId: String(r[6])
+  })).filter(r => r.code);
+}
+function createRanch_(body) {
+  if (String(body.signup || '').trim().toLowerCase() !== SIGNUP_CODE.toLowerCase()) return { ok: false, error: 'bad_signup' };
+  const name = String(body.name || '').trim().slice(0, 80);
+  if (!name) return { ok: false, error: 'no_name' };
+  const existing = ranches_();
+  const taken = {}; existing.forEach(r => taken[r.code] = true);
+  let code;
+  do { code = pick_() + '-' + pick_() + '-' + (100 + Math.floor(Math.random() * 900)); } while (taken[code]);
+  const ss = SpreadsheetApp.create('Herd Book – ' + name);
+  Object.keys(TABS).forEach(col => load_(ss, col));
+  const blank = ss.getSheetByName('Sheet1'); if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  const sh = ranchesSheet_(), row = sh.getLastRow() + 1;
+  sh.getRange(row, 1, 1, RANCH_HEAD.length).setValues([[name, code, NEW_RANCHES_ACTIVE, ss.getUrl(), String(body.by || ''), new Date(), ss.getId()]]);
+  sh.getRange(row, 3).insertCheckboxes();
+  if (NEW_RANCHES_ACTIVE) sh.getRange(row, 3).setValue(true);
+  return { ok: true, code: code, ranch: name, active: NEW_RANCHES_ACTIVE };
+}
+function pick_() { return WORDS[Math.floor(Math.random() * WORDS.length)]; }
+
+// ---------- sync ----------
+function sync_(body) {
+  const code = String(body.code || '').trim().toLowerCase();
+  const ranch = ranches_().filter(r => r.code === code)[0];
+  if (!ranch) return { ok: false, error: 'bad_code' };
+  if (!ranch.active) return { ok: false, error: 'ranch_off', ranch: ranch.name };
+  const ss = SpreadsheetApp.openById(ranch.sheetId);
+  const props = PropertiesService.getScriptProperties();
+  const revKey = 'rev:' + ranch.sheetId;
+  const tables = {};
+  const table = col => tables[col] || (tables[col] = load_(ss, col));
+  const ops = Array.isArray(body.ops) ? body.ops : [];
+  const conflicts = [];
+  let rev = Number(props.getProperty(revKey) || 0);
+
+  if (ops.length) {
+    rev = Math.max(Date.now(), rev + 1);
+    ops.forEach(op => { if (op && TABS[op.col] && op.id) apply_(table(op.col), op, rev, conflicts); });
+    Object.keys(tables).forEach(k => save_(tables[k]));
+    props.setProperty(revKey, String(rev));
+  }
+
+  const since = Number(body.since) || 0;
+  const changes = {};
+  Object.keys(TABS).forEach(col => {
+    let rows = table(col).rows.filter(r => Number(r._rev) > since);
+    if (col === 'history' && rows.length > 500) rows = rows.slice(-500);
+    changes[col] = rows.map(decode_);
+  });
+  return { ok: true, ranch: ranch.name, rev: rev, changes: changes, conflicts: conflicts };
 }
 
 function load_(ss, col) {
