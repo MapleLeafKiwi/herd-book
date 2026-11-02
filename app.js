@@ -453,7 +453,7 @@ function openCollar(id){
     </div>
     <form id="cf" class="card">
       <label class="f">Collar note<input id="c-note" type="text" value="${esc(c.note||'')}" placeholder="Colour, condition, battery"></label>
-      <label class="f">eShepherd neckband serial (optional)<input id="c-nb" type="text" inputmode="numeric" value="${esc(c.neckband||'')}" placeholder="e.g. 4153663861"></label>
+      <label class="f">eShepherd neckband serial (optional)<input id="c-nb" type="text" inputmode="numeric" value="${esc(c.neckband||'')}" placeholder="e.g. 0123456789"></label>
       <label class="check"><input id="c-lost" type="checkbox" ${c.status==='lost'?'checked':''}> Lost or out of use</label>
       <div class="bar"><button class="btn primary" type="submit" style="flex:1">Save</button><button class="btn danger" type="button" id="c-del">Remove from list</button></div>
     </form>
