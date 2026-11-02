@@ -1,12 +1,13 @@
 // Herd Book service worker: keeps the app on the phone so it opens with no signal.
-const CACHE = 'herdbook-v6';
+const CACHE = 'herdbook-v7';
+const OCR = 'herdbook-ocr-1';   // the collar scanner: big, rarely changes, kept across app updates
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './qrcode.js', './xlsx.mini.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== OCR).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const req = e.request;
@@ -25,6 +26,10 @@ self.addEventListener('fetch', e => {
         return res;
       } catch { return cached || Response.error(); }
     })());
+    return;
+  }
+  if (url.origin === self.location.origin && url.pathname.includes('/ocr/')) {
+    e.respondWith(caches.open(OCR).then(async c => (await c.match(req)) || fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; })));
     return;
   }
   // Everything else: phone copy first, refresh it in the background.

@@ -265,7 +265,7 @@ function renderYard(){
   sel.innerHTML = `<option value="">All groups</option>` + g.map(x=>`<option ${x===S.yGroup?'selected':''}>${esc(x)}</option>`).join('');
   const q = $('#yq').value.trim();
   let rows = onHand().filter(a=>!S.yGroup || a.group===S.yGroup).filter(a=>matches(a,q));
-  if(S.yFilter==='need') rows = rows.filter(a=>a.collar && !a.collarOn);
+  if(S.yFilter==='need') rows = rows.filter(a=>a.collar ? !a.collarOn : a.kind!=='calf');
   rows.sort(byCollar);
   const exact = q && onHand().find(a=>String(a.collar).toLowerCase()===q.toLowerCase());
   if(exact) rows = [exact, ...rows.filter(a=>a!==exact)];
@@ -285,7 +285,7 @@ function renderYard(){
         <div class="meta">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</div></div></div>
       ${a.notes?`<div class="small">${esc(a.notes)}</div>`:''}
       <div class="acts">
-        ${a.collar ? `<button type="button" class="btn ${a.collarOn?'':'tag'}" data-fit="${esc(a.id)}">${a.collarOn?'Undo fitted':'Collar fitted ✓'}</button>`:''}
+        ${a.collar ? `<button type="button" class="btn ${a.collarOn?'':'tag'}" data-fit="${esc(a.id)}">${a.collarOn?'Undo fitted':'Collar fitted ✓'}</button>` : `<button type="button" class="btn tag" data-fitc="${esc(a.id)}">Fit collar</button>`}
         <button type="button" class="btn" data-open="${esc(a.id)}">Details</button>
       </div>
     </div>`).join('');
@@ -295,6 +295,7 @@ $('#yGroup').addEventListener('change', e=>{ S.yGroup=e.target.value; renderYard
 $('#yFilter').addEventListener('click', e=>{ const b=e.target.closest('[data-f]'); if(!b) return; S.yFilter=b.dataset.f; document.querySelectorAll('#yFilter button').forEach(x=>x.setAttribute('aria-pressed', x===b)); renderYard(); });
 $('#yardList').addEventListener('click', e=>{
   const o=e.target.closest('[data-open]'); if(o) return openAnimal(o.dataset.open);
+  const fc=e.target.closest('[data-fitc]'); if(fc) return openFitCollar(fc.dataset.fitc);
   const f=e.target.closest('[data-fit]'); if(f) toggleFit(S.animals.get(f.dataset.fit));
 });
 
@@ -644,6 +645,7 @@ function renderSetup(){
   st.textContent = !(syncUrl()&&cfg.code) ? 'Changes are kept on this phone only until it joins a ranch.'
     : lastErr ? lastErr
     : S.lastSync ? `Last synced ${new Date(S.lastSync).toLocaleString()}.` : 'Tap “Sync now” to load the herd.';
+  st.textContent += ocrReady() ? ' Collar photo scanner is ready to use without signal.' : ' The collar photo scanner downloads the next time there’s signal.';
   $('#shareBtn').hidden = !cfg.code;
 }
 $('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#shareNow')) openShare(); });
@@ -732,10 +734,11 @@ function openAnimal(id){
   const mv = k => a[k]===''||a[k]==null ? '' : Number(a[k]).toFixed(2).replace(/\.00$/,'');
   openSheet(`
     <div class="sheet-h"><h2>${id?esc(label(a)):'New animal'}${id&&isSold(a)?' <span class="pill sold">Sold</span>':''}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    ${id&&!isSold(a)?`<div class="bar"><button type="button" class="btn tag" data-goto="fit">${CAM} Fit collar</button></div>`:''}
     <form id="af" class="card" autocomplete="off">
       <div class="grid2">
         <label class="f">Type<select id="a-kind">${Object.entries(KIND).map(([k,v])=>`<option value="${k}" ${a.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
-        <label class="f">Collar #<input id="a-collar" type="text" inputmode="numeric" list="collarlist" value="${esc(a.collar||'')}"><datalist id="collarlist">${freeCollars().map(c=>`<option value="${esc(c.number)}">`).join('')}</datalist></label>
+        <div class="f" style="grid-column:1/-1"><label for="a-collar">Collar #</label><div class="inrow"><input id="a-collar" type="text" inputmode="numeric" list="collarlist" value="${esc(a.collar||'')}">${camButton('a-cphoto')}</div><datalist id="collarlist">${freeCollars().map(c=>`<option value="${esc(c.number)}">`).join('')}</datalist><div id="a-scan"></div></div>
         <label class="f">Group<input id="a-group" type="text" list="grouplist" value="${esc(a.group||'')}"><datalist id="grouplist">${groups().map(g=>`<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="check"><input id="a-on" type="checkbox" ${a.collarOn?'checked':''}> Collar fitted</label>
         <label class="f">Brand<input id="a-b1" type="text" value="${esc(a.brand1||'')}"></label>
@@ -773,13 +776,14 @@ function openAnimal(id){
     $('#a-margin').textContent = (typeof p==='number' && typeof s==='number') ? `Difference: ${money(s-p)}` : ''; };
   if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
     $('#a-sd').addEventListener('change', ()=>{ const w=id&&withdrawalUntil(id); if(w && $('#a-sd').value && $('#a-sd').value<=w) $('#a-warn').innerHTML=`<div class="notice warn">This animal is on withdrawal until ${esc(fmtDate(w))}.</div>`; }); }
-  $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else openTreatment(null,[id]); }));
+  $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else if(b.dataset.goto==='fit') openFitCollar(id); else openTreatment(null,[id]); }));
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
     $('#a-warn').innerHTML = d?`<div class="notice warn">Collar ${esc(v)} is already on ${esc(label(d))}${d.group?' in '+esc(d.group):''}.</div>`
       : (c && c.status==='lost') ? `<div class="notice warn">Collar ${esc(v)} is marked lost in the collar list.</div>`
       : (v && !c && S.collars.size) ? `<div class="notice warn">Collar ${esc(v)} isn’t in your collar list. You can add it from the Collars tab.</div>` : ''; };
   collarInput.addEventListener('input', checkDup);
+  wireScan('#a-cphoto', '#a-scan', n=>{ collarInput.value=n; checkDup(); });
   if(id){
     $('#a-hist').addEventListener('click', ()=>{
       const box=$('#a-histlist'); if(!box.hidden){ box.hidden=true; return; }
@@ -1407,6 +1411,121 @@ function openExport(){
 document.addEventListener('click', e=>{ if(e.target.closest('[data-open-import]')) openImport(); if(e.target.closest('[data-open-export]')) openExport(); });
 
 
+// ---------- collar photo scanning: runs on the phone, works with no signal once downloaded ----------
+const CAM = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="vertical-align:-4px"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+let ocrWorker=null, ocrStarting=null;
+const ocrReady = () => { try{ return localStorage.getItem('herdbook.ocrReady')==='1'; }catch{ return false; } };
+function loadScript(src){ return new Promise((res,rej)=>{ if(window.Tesseract) return res(); const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+async function getOcr(){
+  if(ocrWorker) return ocrWorker;
+  if(ocrStarting) return ocrStarting;
+  ocrStarting = (async()=>{
+    await loadScript('./ocr/tesseract.min.js');
+    const w = await Tesseract.createWorker('eng', 1, { workerPath:'./ocr/worker.min.js', corePath:'./ocr/', langPath:'./ocr', gzip:true, workerBlobURL:false });
+    await w.setParameters({ tessedit_char_whitelist:'0123456789', tessedit_pageseg_mode:'11' });
+    ocrWorker=w; try{ localStorage.setItem('herdbook.ocrReady','1'); }catch{}
+    return w;
+  })();
+  try{ return await ocrStarting; } finally { ocrStarting=null; }
+}
+// Download the scanner in the background the first time the app has signal, so it's there in the yard.
+function warmOcr(){
+  if(ocrReady() || navigator.onLine===false) return;
+  setTimeout(async ()=>{ if(ocrWorker || document.hidden) return; try{ const w=await getOcr(); if(w===ocrWorker && !scanning){ await w.terminate(); ocrWorker=null; } renderSetup(); }catch{} }, 20000);
+}
+async function photoCanvases(file){
+  let src;
+  try{ src = await createImageBitmap(file); }
+  catch{ src = await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=URL.createObjectURL(file); }); }
+  const W=src.width, H=src.height, scale=Math.min(1, 1600/Math.max(W,H));
+  const w=Math.max(1,Math.round(W*scale)), h=Math.max(1,Math.round(H*scale));
+  const base=document.createElement('canvas'); base.width=w; base.height=h; base.getContext('2d').drawImage(src,0,0,w,h);
+  const make = (invert, rot) => {
+    const c=document.createElement('canvas'); const swap = rot%180!==0; c.width=swap?h:w; c.height=swap?w:h;
+    const x=c.getContext('2d'); x.translate(c.width/2,c.height/2); x.rotate(rot*Math.PI/180); x.drawImage(base,-w/2,-h/2);
+    const d=x.getImageData(0,0,c.width,c.height), p=d.data; let lo=255, hi=0; const g=new Uint8ClampedArray(p.length/4);
+    for(let i=0,j=0;i<p.length;i+=4,j++){ const v=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]; g[j]=v; if(v<lo) lo=v; if(v>hi) hi=v; }
+    const span=Math.max(1,hi-lo);
+    for(let i=0,j=0;i<p.length;i+=4,j++){ let v=(g[j]-lo)*255/span; if(invert) v=255-v; p[i]=p[i+1]=p[i+2]=v; }
+    x.setTransform(1,0,0,1,0,0); x.putImageData(d,0,0); return c;
+  };
+  return { thumb: base.toDataURL('image/jpeg',0.6), make };
+}
+function knownSerials(){ return [...new Set([...collarList().flatMap(c=>[c.number,c.neckband]), ...animals().map(a=>a.collar)].filter(Boolean).map(v=>String(v).trim()))]; }
+function serialCandidates(texts){
+  const known=new Set(knownSerials()), found=new Map();
+  texts.forEach(t=>{ (String(t).replace(/[ \t]+/g,'').match(/\d{5,14}/g)||[]).forEach(n=>found.set(n,(found.get(n)||0)+1)); });
+  const list=[...found.entries()].map(([n,c])=>{ const o={n, known:known.has(n), score:c+(n.length===10?3:0)+(known.has(n)?10:0)};
+    if(!o.known){ const near=[...known].find(k=>k.length===n.length && [...k].filter((ch,i)=>ch!==n[i]).length===1); if(near){ o.near=near; o.score+=5; } }
+    return o; });
+  return list.sort((a,b)=>b.score-a.score).slice(0,5);
+}
+let scanning=false;
+async function readSerial(file, show){
+  scanning=true;
+  try{
+    show('Opening the scanner…');
+    let w; try{ w=await getOcr(); }catch{ show(navigator.onLine===false && !ocrReady() ? 'The scanner downloads the first time the app has signal. Type the number for now.' : 'The scanner couldn’t start. Type the number for now.', true); return []; }
+    const img=await photoCanvases(file);
+    show(`<img src="${img.thumb}" alt="" class="scanthumb"> Reading the collar…`, false, true);
+    const texts=[], passes=[[false,0],[true,0],[false,90],[false,270]];
+    for(let i=0;i<passes.length;i++){
+      const { data } = await w.recognize(img.make(passes[i][0], passes[i][1])); texts.push(data.text||'');
+      const c=serialCandidates(texts); if(c.some(x=>x.known)) break; if(i>=1 && c.length) break;
+    }
+    return { thumb: img.thumb, cands: serialCandidates(texts) };
+  } finally { scanning=false; }
+}
+// Hook a photo input to a result box; onPick gets the chosen serial.
+function wireScan(inputSel, boxSel, onPick){
+  const input=$(inputSel), box=$(boxSel); if(!input||!box) return;
+  const show=(html, warn, raw)=>{ box.innerHTML = raw ? `<div class="scanbox">${html}</div>` : `<div class="notice ${warn?'warn':'ok'}">${esc(html)}</div>`; };
+  input.addEventListener('change', async e=>{
+    const file=e.target.files[0]; e.target.value=''; if(!file) return;
+    let r; try{ r=await readSerial(file, show); }catch{ show('That photo couldn’t be read. Try again closer and in better light, or type the number.', true); return; }
+    if(!r || !r.cands) return;
+    if(!r.cands.length){ box.innerHTML=`<div class="scanbox"><img src="${r.thumb}" alt="" class="scanthumb"><div><b>No number found.</b> Try again closer, straight on and in good light, or type it.</div></div>`; return; }
+    box.innerHTML=`<div class="scanbox"><img src="${r.thumb}" alt="" class="scanthumb"><div style="display:flex;flex-direction:column;gap:6px;min-width:0"><b>Tap the right number</b>
+      ${r.cands.map(c=>`<button type="button" class="btn ${c.known?'primary':''} scanpick" data-pick="${esc(c.n)}">${esc(c.n)}${c.known?' · in your collar list':''}</button>${c.near?`<button type="button" class="btn scanpick" data-pick="${esc(c.near)}">Did you mean ${esc(c.near)}?</button>`:''}`).join('')}</div></div>`;
+    onPick(r.cands[0].n);
+  });
+  box.addEventListener('click', e=>{ const b=e.target.closest('[data-pick]'); if(!b) return; onPick(b.dataset.pick); box.querySelectorAll('[data-pick]').forEach(x=>x.classList.toggle('primary', x===b)); });
+}
+function camButton(id){ return `<label class="btn cambtn" for="${id}" title="Take a photo of the collar number">${CAM}<span>Photo</span></label><input id="${id}" type="file" accept="image/*" capture="environment" hidden>`; }
+
+// Fit a collar to an animal: type the serial or take a photo of it.
+function openFitCollar(id){
+  const a=S.animals.get(id); if(!a) return;
+  openSheet(`<div id="fc" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>Fit collar · ${esc(label(a))}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card">
+      <div>${brandsHtml(a)||''} <span class="muted small">${esc(a.group||'')}</span>${a.collar?` · now ${collarHtml(a)}`:''}</div>
+      <label class="f" for="fc-num">Collar serial</label>
+      <div class="inrow"><input id="fc-num" type="text" inputmode="numeric" autocomplete="off" value="${esc(a.collar||'')}" placeholder="Type it or take a photo">${camButton('fc-photo')}</div>
+      <div id="fc-scan"></div>
+      <label class="check"><input id="fc-on" type="checkbox" checked> Collar is on the animal now</label>
+      <div id="fc-warn"></div>
+      <button class="btn primary" type="button" id="fc-save">Save</button>
+    </div></div>`);
+  const num=$('#fc-num');
+  const check=()=>{ const v=num.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
+    $('#fc-warn').innerHTML = d ? `<div class="notice warn">Collar ${esc(v)} is on ${esc(label(d))}${d.brand1?' ('+esc(d.brand1)+')':''}. Saving moves it to this animal.</div>`
+      : (c && c.status==='lost') ? `<div class="notice warn">Collar ${esc(v)} is marked lost.</div>`
+      : (v && !c) ? `<div class="notice ok">New collar. It will be added to your collar list.</div>` : ''; };
+  num.addEventListener('input', check); check();
+  wireScan('#fc-photo', '#fc-scan', n=>{ num.value=n; check(); });
+  $('#fc-save').addEventListener('click', ()=>{
+    const v=num.value.trim(); if(!v){ toast('Enter or scan the collar serial'); return; }
+    const on=$('#fc-on').checked, now=Date.now();
+    const other=onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v));
+    if(other){ patch('animals/'+other.id, {collar:'', collarOn:false, updatedAt:now, updatedBy:me()}); logChange(other.id,'animal',label(other),'collar moved to '+label(a),[{f:'collar',from:other.collar,to:''}]); }
+    if(!collarFor(v)){ outbox.push({op:'set', path:'collars/'+cid(v), data:{number:v, neckband:/^\d{6,}$/.test(v)?v:'', note:'', status:'ok', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}); saveOutbox(); }
+    const ch=[]; if((a.collar||'')!==v) ch.push({f:'collar',from:a.collar||'',to:v}); if(!!a.collarOn!==on) ch.push({f:'collarOn',from:!!a.collarOn,to:on});
+    if(ch.length){ patch('animals/'+id, {collar:v, collarOn:on, updatedAt:now, updatedBy:me()}); logChange(id,'animal',label({...a,collar:v}),'collar fitted',ch); } else recompute();
+    closeSheet(); toast(`Collar ${v} ${on?'fitted to':'assigned to'} ${a.brand1||label(a)}`);
+  });
+}
+
 // ---------- boot ----------
 function renderAll(){
   if(S.tab==='herd') renderHerd(); else if(S.tab==='yard') renderYard(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='breeding') renderBreeding(); else if(S.tab==='health') renderHealth(); else if(S.tab==='money') renderMoney(); else renderLog();
@@ -1415,6 +1534,9 @@ setTab(); recompute(); renderSetup();
 if(!storageOk) toast('This browser isn’t keeping a copy on the phone. Use the home-screen app instead.');
 openStart(false);
 sync();
+(()=>{ const y=$('#yq'); const wrap=document.createElement('div'); wrap.className='inrow'; y.parentNode.insertBefore(wrap,y); wrap.appendChild(y); wrap.insertAdjacentHTML('beforeend', camButton('yq-photo')); wrap.insertAdjacentHTML('afterend','<div id="yScan"></div>');
+  wireScan('#yq-photo', '#yScan', n=>{ $('#yq').value=n; renderYard(); }); })();
+warmOcr(); window.addEventListener('online', warmOcr);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 window.__herdbook = { sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg };
 })();
