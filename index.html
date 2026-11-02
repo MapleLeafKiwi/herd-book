@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Herd Book</title>
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Herd Book">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}[hidden]{display:none!important}img{max-width:100%}
+/* Layout: one column, sticky header with tabs; ear-tag yellow marks collars, everything else stays quiet for outdoor reading */
+:root{
+  --bg:#edf0f1; --surface:#ffffff; --sunk:#e2e7e9; --ink:#172126; --muted:#56656b; --line:#cdd5d8;
+  --tag:#f26522; --tag-ink:#1a0e06; --ok:#2d7a4c; --ok-soft:#dcefe3; --warn:#a9521a; --warn-soft:#f6e3d5; --focus:#1f6fa8;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11171a; --surface:#1a2226; --sunk:#151c1f; --ink:#e4eaec; --muted:#93a3a8; --line:#2c383d;
+  --tag:#f26522; --tag-ink:#1a0e06; --ok:#63c58f; --ok-soft:#1b3326; --warn:#eb9a62; --warn-soft:#3a2416; --focus:#6fb3e3; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11171a; --surface:#1a2226; --sunk:#151c1f; --ink:#e4eaec; --muted:#93a3a8; --line:#2c383d;
+  --tag:#f26522; --tag-ink:#1a0e06; --ok:#63c58f; --ok-soft:#1b3326; --warn:#eb9a62; --warn-soft:#3a2416; --focus:#6fb3e3; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:780px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.hrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-block:12px 8px}
+h1{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.sync{font-size:13px;color:var(--muted)}
+nav{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
+nav a{flex:1;text-align:center;font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--muted);padding:8px 6px;border-radius:8px;white-space:nowrap}
+@media (max-width:440px){nav{gap:2px}nav a{font-size:14px;letter-spacing:0;padding:8px 4px;min-width:0;flex:1 1 auto}}
+nav a[aria-current="page"]{background:var(--ink);color:var(--surface)}
+main{padding-block:16px 48px}
+section[data-view]{display:flex;flex-direction:column;gap:14px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select,textarea,button{font:inherit;color:inherit}
+input[type=search],input[type=text],input[type=date],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;min-height:46px;width:100%}
+textarea{min-height:90px;resize:vertical}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.search{flex:1 1 220px;min-width:0}
+.big-search{font-size:22px;min-height:60px;font-weight:700}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 16px;min-height:46px;cursor:pointer;font-weight:700}
+.btn.primary{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.btn.tag{background:var(--tag);color:var(--tag-ink);border-color:var(--tag)}
+.btn.danger{color:var(--warn);border-color:var(--warn)}
+.btn.danger.armed{background:var(--warn);color:var(--surface)}
+.btn:disabled{opacity:.5;cursor:default}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px;white-space:nowrap;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.stats b{font-family:var(--display);font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums;margin-right:4px}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);cursor:pointer;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%}
+.row:first-child{border-top:0}
+.row:hover{background:var(--sunk)}
+.row .main{min-width:0}
+.row .line1{font-weight:700;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.row .line2{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .when{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.collar{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:58px;height:46px;padding:0 10px 0 18px;background:var(--tag);color:var(--tag-ink);border-radius:6px 12px 12px 6px;font-family:var(--display);font-weight:700;font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.collar::before{content:"";position:absolute;left:6px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.collar.none{background:var(--sunk);color:var(--muted);font-size:15px}
+.collar.xl{height:84px;min-width:120px;font-size:54px;padding-left:28px;border-radius:8px 18px 18px 8px}
+.collar.xl::before{left:9px;width:11px;height:11px;margin-top:-5.5px}
+.brand{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.03em;border:1.5px solid var(--ink);border-radius:5px;padding:0 6px;line-height:1.35}
+.pill{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bull{background:var(--ink);color:var(--surface)}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:28px 20px;text-align:center;color:var(--muted)}
+.empty strong{display:block;color:var(--ink);font-size:18px;margin-bottom:4px}
+.yard{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:10px}
+.ycard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.ycard.fitted{border-color:var(--ok)}
+.ycard .top{display:flex;gap:14px;align-items:center}
+.ycard .brands{display:flex;gap:6px;flex-wrap:wrap}
+.ycard .brands .brand{font-size:24px}
+.ycard .meta{font-size:14px;color:var(--muted)}
+.ycard .acts{display:flex;gap:8px}
+.ycard .acts .btn{flex:1}
+.notice{border-radius:12px;padding:12px 14px;font-weight:700}
+.notice.ok{background:var(--ok-soft);color:var(--ok)}
+.notice.warn{background:var(--warn-soft);color:var(--warn)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card h3{margin:0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:17px}
+.exp{font-size:14px;border-top:1px solid var(--line);padding-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.exp .who{min-width:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+h2{font-family:var(--display);font-weight:700;font-size:22px;text-transform:uppercase;letter-spacing:.03em;margin:6px 0 0}
+.log{display:flex;flex-direction:column;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.logitem{padding:10px 12px;border-top:1px solid var(--line);font-size:14px}
+.logitem:first-child{border-top:0}
+.logitem .head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.logitem ul{margin:6px 0 0;padding-left:18px}
+.logitem del{color:var(--warn)}
+.logitem ins{text-decoration:none;color:var(--ok);font-weight:700}
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(10,15,18,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:640px;max-height:92%;overflow:auto;border-radius:18px 18px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+@media (min-width:700px){.scrim{align-items:center}.sheet{border-radius:18px;max-height:88%}}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sheet-h h2{margin:0}
+.x{border:0;background:var(--sunk);width:42px;height:42px;border-radius:50%;font-size:22px;cursor:pointer;flex:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:420px){.grid2{grid-template-columns:1fr}}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+label.check{display:flex;gap:10px;align-items:center;font-weight:700;min-height:46px}
+label.check input{width:24px;height:24px}
+.updated{border:0;background:none;padding:0;text-align:left;color:var(--focus);text-decoration:underline;cursor:pointer;font-size:14px}
+.picklist{max-height:260px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.picklist label{display:flex;gap:10px;align-items:center;padding:8px 10px;border-top:1px solid var(--line)}
+.picklist label:first-child{border-top:0}
+.picklist input{width:20px;height:20px;flex:none}
+.seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;background:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.sync.off{color:var(--warn);font-weight:700}
+.conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
+.ro{margin-bottom:12px}
+.vbox{background:var(--sunk);border-radius:10px;padding:10px;min-width:0;overflow-wrap:anywhere}
+.vbox .val{font-weight:700;margin-top:4px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.ctile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;min-width:0;font:inherit;color:inherit}
+.ctile .who{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ctile.free{border-style:dashed}
+.ctile.free .collar{background:var(--surface);box-shadow:inset 0 0 0 2px var(--tag);color:var(--ink)}
+.ctile.lost .collar{background:var(--sunk);color:var(--muted);text-decoration:line-through}
+.ctile.fitted{border-color:var(--ok)}
+.money{font-variant-numeric:tabular-nums}
+.pill.sold{background:var(--sunk);color:var(--ink);border:1px solid var(--line)}
+.row.sold{opacity:.65}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:10px;z-index:30;font-weight:700;max-width:calc(100% - 32px)}
+.ro{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700}
+.fab-row{display:flex;gap:8px;flex-wrap:wrap}
+.fab-row .btn{flex:1 1 auto}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
+</style>
+
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="hrow"><h1>Herd Book</h1><span class="sync" id="sync">Connecting…</span></div>
+    <nav>
+      <a href="#herd" data-tab="herd">Herd</a>
+      <a href="#yard" data-tab="yard">Yard</a>
+      <a href="#collars" data-tab="collars">Collars</a>
+      <a href="#bulls" data-tab="bulls">Bulls</a>
+      <a href="#log" data-tab="log">Log</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <button type="button" class="conflict-bar" id="conflictBar" hidden></button>
+  <div class="ro" id="setupBanner" hidden>This phone isn’t connected to the herd’s Google Sheet yet, so changes stay on this phone. Connect it in <a href="#log">Log › Phone setup</a>.</div>
+
+  <section data-view="herd">
+    <div class="bar">
+      <input id="q" class="search" type="search" placeholder="Search collar, brand, notes, group" autocomplete="off">
+      <button class="btn primary" id="addBtn" type="button">+ Add animal</button>
+    </div>
+    <div class="chips" id="groupChips"></div>
+    <label class="check small" style="min-height:0"><input id="showSold" type="checkbox" style="width:20px;height:20px"> Show sold animals</label>
+    <div class="stats" id="stats"></div>
+    <div id="herdList"></div>
+  </section>
+
+  <section data-view="yard" hidden>
+    <input id="yq" class="big-search" type="search" placeholder="Type brand or collar #" autocomplete="off" inputmode="text">
+    <div class="bar">
+      <select id="yGroup" style="flex:1 1 160px;width:auto"></select>
+      <div class="seg" style="flex:1 1 220px" id="yFilter">
+        <button type="button" data-f="need" aria-pressed="true">Needs collar</button>
+        <button type="button" data-f="all" aria-pressed="false">All</button>
+      </div>
+    </div>
+    <div id="yNotice"></div>
+    <div id="yardList" class="yard"></div>
+  </section>
+
+  <section data-view="collars" hidden>
+    <div class="bar">
+      <input id="cq" class="search" type="search" placeholder="Find collar #, brand or note" autocomplete="off">
+      <button class="btn primary" id="cAddBtn" type="button">+ Add collars</button>
+    </div>
+    <div class="chips" id="cChips"></div>
+    <div id="cWarn" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div id="collarList"></div>
+    <div class="card" id="cSeason">
+      <b>Collars off for the year?</b>
+      <div class="small muted">Start a new season to mark every fitted collar as not fitted. Each cow keeps her collar number, so she gets the same collar next time and shows up under “Needs collar” in the Yard. Fitted right now: <b id="seasonCount">0</b>.</div>
+      <div class="fab-row"><button class="btn danger" id="seasonBtn" type="button">Start new season</button><button class="btn" id="cExport" type="button">Download collar list (CSV)</button></div>
+    </div>
+  </section>
+
+  <section data-view="bulls" hidden>
+    <div class="fab-row"><button class="btn primary" id="expBtn" type="button">+ Record bull with cows</button></div>
+    <div id="bullList" style="display:flex;flex-direction:column;gap:12px"></div>
+  </section>
+
+  <section data-view="log" hidden>
+    <h2>Phone setup</h2>
+    <div class="card" id="setupCard">
+      <label class="f">Your name (shown in the change log)<input id="cfg-name" type="text" autocomplete="name"></label>
+      <label class="f">Farm code<input id="cfg-code" type="text" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <details><summary class="small">Sync address</summary>
+        <label class="f" style="margin-top:8px">Google Apps Script web app URL<input id="cfg-url" type="url" inputmode="url"></label>
+      </details>
+      <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
+      <div class="small" id="cfg-status"></div>
+      <div id="shareBox" hidden style="display:flex;flex-direction:column;gap:8px">
+        <div class="small"><b>Link for another phone.</b> Open it on that phone, then Add to Home Screen. On iPhone they may still need to type the farm code once.</div>
+        <input id="shareLink" type="text" readonly>
+        <div><button class="btn" id="copyLink" type="button">Copy link</button></div>
+      </div>
+    </div>
+    <h2>Backup</h2>
+    <div class="card">
+      <div class="small muted">Every change is saved on this phone first, then sent to the herd’s Google Sheet when there is signal. The sheet is your main backup. Download a copy now and then so you always have one of your own.</div>
+      <div class="fab-row">
+        <button class="btn" id="exportCsv" type="button">Download herd (CSV)</button>
+        <button class="btn" id="exportJson" type="button">Full backup (JSON)</button>
+      </div>
+      <div class="small muted">Load a spreadsheet: CSV with columns <b>collar, group, brand1, brand2, notes, type, purchase_price, purchase_date, sale_price, sale_date</b> (type = cow, heifer or bull; dates as YYYY-MM-DD).</div>
+      <div class="fab-row">
+        <label class="btn" for="importFile" id="importLabel" style="text-align:center">Import CSV</label>
+        <input id="importFile" type="file" accept=".csv,text/csv" hidden>
+      </div>
+      <div id="importMsg" class="small"></div>
+    </div>
+    <h2>Recent changes</h2>
+    <div id="logList"></div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
