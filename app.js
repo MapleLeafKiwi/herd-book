@@ -143,14 +143,14 @@ async function sync(){
       try{ res = await post({code:cfg.code, since:mirror.rev||0, ops}); } finally { inflight = 0; }
       if(res && res.ok && Array.isArray(res.conflicts) && res.conflicts.length) takeConflicts(res.conflicts, batch);
       if(!res || !res.ok){
-        lastErr = res && res.error==='bad_code' ? 'That ranch code isn’t recognised. Check it in Log › Phone setup.'
+        lastErr = res && res.error==='bad_code' ? 'This ranch code no longer works. Ask the ranch for a new share link.'
           : res && res.error==='ranch_off' ? `${res.ranch||'This ranch'} is switched off or waiting for approval.`
           : res && res.error==='busy' ? 'The sheet is busy. Trying again shortly.' : 'The sheet couldn’t take the changes. Trying again shortly.';
         break;
       }
       outbox.splice(0, batch.length); saveOutbox();
       mergeChanges(res.changes); mirror.rev = res.rev || mirror.rev;
-      if(res.ranch && res.ranch!==cfg.ranchName){ cfg.ranchName=res.ranch; LS.set(K.cfg,cfg); }
+      if(res.ranch!==undefined && (res.ranch!==cfg.ranchName || res.role!==cfg.role || (res.crewCode||'')!==(cfg.crewCode||''))){ cfg.ranchName=res.ranch; cfg.role=res.role; cfg.crewCode=res.crewCode||''; LS.set(K.cfg,cfg); }
       S.lastSync = Date.now(); lastErr=''; saveMirror();
     } while(outbox.length);
   }catch(e){
@@ -191,7 +191,10 @@ function ago(t){
 }
 const fmtDate = d => d ? new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '';
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,2800); }
-const isSold = a => !!(a.saleDate || (a.salePrice!==''&&a.salePrice!=null));
+const isSold = a => !!(a.sold===true || a.saleDate || (a.salePrice!==''&&a.salePrice!=null));
+// Prices are shown on full-access phones (and on a phone that hasn't joined a ranch). Crew phones never receive them.
+const fin = () => !cfg.code || cfg.role==='full';
+const FIN = ['purchasePrice','purchaseDate','salePrice','saleDate'];
 const animals = () => [...S.animals.values()];
 const onHand = () => animals().filter(a=>!isSold(a));
 const females = () => onHand().filter(a=>a.kind!=='bull');
@@ -227,7 +230,7 @@ function renderHerd(){
   const live = inGroup.filter(a=>!isSold(a)), sold = inGroup.filter(isSold);
   const fem = live.filter(a=>a.kind!=='bull'), withCollar = live.filter(a=>a.collar);
   const sum = (xs,k) => xs.reduce((t,a)=>t+(Number(a[k])||0),0);
-  const bought = sum(inGroup,'purchasePrice'), soldFor = sum(sold,'salePrice');
+  const bought = fin() ? sum(inGroup,'purchasePrice') : 0, soldFor = fin() ? sum(sold,'salePrice') : 0;
   $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>bulls</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
   const q = $('#q').value.trim();
   const rows = inGroup.filter(a=>matches(a,q)).sort(byCollar);
@@ -566,21 +569,15 @@ function logHtml(items){
 function renderLog(){ $('#logList').innerHTML = logHtml(S.history.slice(0,150)); renderSetup(); }
 
 // ---------- ranch & phone setup ----------
-function shareLink(){
-  if(!syncUrl() || !cfg.code) return '';
+function shareLink(code){
+  if(!syncUrl() || !code) return '';
   const s = (cfg.url && cfg.url!==SYNC_URL) || !SYNC_URL ? 's=' + encodeURIComponent(syncUrl()) + '&' : '';
-  return location.origin + location.pathname + '?' + s + 'k=' + encodeURIComponent(cfg.code);
+  return location.origin + location.pathname + '?' + s + 'k=' + encodeURIComponent(code);
 }
 function drawQR(el, text){
   el.innerHTML='';
   if(!text || typeof qrcode!=='function') return;
   try{ const q=qrcode(0,'M'); q.addData(text); q.make(); el.innerHTML=q.createSvgTag({cellSize:4, margin:2, scalable:true}); }catch{}
-}
-function shareBlock(){
-  return `<div class="qr" data-qr></div>
-    <div class="small">Ranch code: <b>${esc(cfg.code)}</b></div>
-    <input type="text" readonly value="${esc(shareLink())}" data-link>
-    <div class="fab-row"><button class="btn" type="button" data-copy>Copy link</button></div>`;
 }
 async function copyFrom(btn){
   const el = btn.closest('[data-share]').querySelector('[data-link]');
@@ -589,19 +586,60 @@ async function copyFrom(btn){
 }
 document.addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if(b) copyFrom(b); });
 
+// Share: crew links never carry prices (the sheet strips them); full links do.
+function openShare(intro){
+  if(!cfg.code){ openStart(true); return; }
+  const full = cfg.role==='full';
+  let mode = 'crew';
+  const crewCode = () => full ? cfg.crewCode : cfg.code;
+  const draw = () => {
+    const code = mode==='full' ? cfg.code : crewCode();
+    const link = shareLink(code);
+    $('#sh-body').innerHTML = !code ? `<div class="notice warn">Sync once with signal to get the crew link.</div>` : `
+      <div class="notice ${mode==='full'?'warn':'ok'}">${mode==='full'
+        ? 'Full access: they see purchase and sale prices, and can share full access with others.'
+        : 'Crew: they can see and update cattle, collars and bulls, but never see purchase or sale prices.'}</div>
+      <div class="qr" data-qr></div>
+      <input type="text" readonly value="${esc(link)}" data-link>
+      <div class="fab-row"><button class="btn primary" type="button" data-copy>Copy link</button>${navigator.share?'<button class="btn" type="button" id="sh-native">Send…</button>':''}</div>
+      <div class="small muted">They scan the code with their phone camera (or open the link), then tap Add to Home Screen. Code: <b>${esc(code)}</b></div>
+      ${full && mode==='crew' ? `<div class="small">Someone left the crew? <button type="button" class="btn danger" id="sh-reset">Make a new crew link</button><br><span class="muted">Every crew phone will need the new link.</span></div>` : ''}`;
+    drawQR($('#sh-body [data-qr]'), link);
+    const nat=$('#sh-native'); nat && nat.addEventListener('click', ()=>navigator.share({title:`${cfg.ranchName||'Ranch'} on Herd Book`, text:`Join ${cfg.ranchName||'our ranch'} on Herd Book`, url:link}).catch(()=>{}));
+    const rs=$('#sh-reset'); rs && rs.addEventListener('click', async ()=>{
+      if(!rs.classList.contains('armed')){ rs.classList.add('armed'); rs.textContent='Tap again: old crew link stops working'; return; }
+      if(navigator.onLine===false){ toast('Making a new crew link needs signal'); return; }
+      rs.disabled=true; let res=null;
+      try{ res=await post({action:'resetCrewCode', code:cfg.code}); }catch{}
+      if(res && res.ok){ cfg.crewCode=res.crewCode; LS.set(K.cfg,cfg); toast('New crew link made. The old one no longer works.'); draw(); }
+      else { rs.disabled=false; toast('Couldn’t make a new link. Try again with signal.'); }
+    });
+  };
+  openSheet(`<div style="display:flex;flex-direction:column;gap:14px" data-share>
+    <div class="sheet-h"><h2>${esc(intro || 'Share '+(cfg.ranchName||'this ranch'))}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    ${full ? `<div class="seg" id="sh-mode"><button type="button" data-m="crew" aria-pressed="true">Crew · no prices</button><button type="button" data-m="full" aria-pressed="false">Full access</button></div>` : `<div class="small muted">You can share crew access. Crew never see prices.</div>`}
+    <div id="sh-body" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>`);
+  const m=$('#sh-mode');
+  m && m.addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m; m.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b)); draw(); });
+  draw();
+}
+$('#shareBtn').addEventListener('click', ()=>openShare());
+
 function renderSetup(){
   const st=$('#cfg-status'); if(!st) return;
   const nameEl=$('#cfg-name'), urlEl=$('#cfg-url');
   if(document.activeElement!==nameEl) nameEl.value = cfg.name||'';
   if(document.activeElement!==urlEl) urlEl.value = cfg.url||SYNC_URL||'';
-  $('#ranchLine').innerHTML = cfg.code ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div>` : `<b>Not part of a ranch yet.</b> <button type="button" class="btn" id="joinNow">Join or start a ranch</button>`;
+  $('#ranchLine').innerHTML = cfg.code
+    ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div><div class="small muted">${cfg.role==='full'?'Full access, including prices':cfg.role==='crew'?'Crew access, no prices':''}</div><div style="margin-top:8px"><button type="button" class="btn primary" id="shareNow">Share this ranch</button></div>`
+    : `<b>Not part of a ranch yet.</b> <button type="button" class="btn" id="joinNow">Join or start a ranch</button>`;
   st.textContent = !(syncUrl()&&cfg.code) ? 'Changes are kept on this phone only until it joins a ranch.'
     : lastErr ? lastErr
     : S.lastSync ? `Last synced ${new Date(S.lastSync).toLocaleString()}.` : 'Tap “Sync now” to load the herd.';
-  const box=$('#shareBox'), link=shareLink();
-  box.hidden=!link;
-  if(link && box.dataset.for!==link){ box.dataset.for=link; box.querySelector('[data-body]').innerHTML=shareBlock(); drawQR(box.querySelector('[data-qr]'), link); }
+  $('#shareBtn').hidden = !cfg.code;
 }
+$('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#shareNow')) openShare(); });
 $('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#joinNow')) openStart(true); });
 $('#cfg-save').addEventListener('click', ()=>{ cfg.name=$('#cfg-name').value.trim(); LS.set(K.cfg,cfg); toast('Saved'); renderSetup(); });
 $('#cfg-url-save').addEventListener('click', ()=>{ const u=$('#cfg-url').value.trim(); if(u && u!==SYNC_URL) cfg.url=u; else delete cfg.url; LS.set(K.cfg,cfg); lastErr=''; toast('Saved'); renderSetup(); sync(); });
@@ -616,7 +654,7 @@ function switchTo(code, ranchName){
   if(cfg.code && outbox.length) return `This phone has ${outbox.length} change${outbox.length>1?'s':''} for ${cfg.ranchName||'its ranch'} that haven’t been sent yet. Get signal and sync before switching.`;
   if(cfg.code){ mirror.animals={}; mirror.exposures={}; mirror.collars={}; mirror.history=[]; outbox=[]; saveOutbox(); conflicts=[]; saveConflicts(); }
   mirror.rev=0; S.lastSync=0; saveMirror();
-  cfg.code=code; cfg.ranchName=ranchName||''; LS.set(K.cfg,cfg); lastErr='';
+  cfg.code=code; cfg.ranchName=ranchName||''; delete cfg.role; delete cfg.crewCode; LS.set(K.cfg,cfg); lastErr='';
   recompute(); renderSetup();
   return '';
 }
@@ -668,15 +706,8 @@ function openStart(force){
     go.disabled=false;
     if(!res){ say('Couldn’t reach the sheet. Starting a ranch needs signal.'); return; }
     if(!res.ok){ say(res.error==='bad_signup'?'That sign-up code isn’t right.':'The ranch couldn’t be created. Try again.'); return; }
-    switchTo(res.code, res.ranch);
-    openSheet(`<div style="display:flex;flex-direction:column;gap:14px" data-share>
-      <div class="sheet-h"><h2>${esc(res.ranch)} is ready</h2><button class="x" type="button" aria-label="Close">×</button></div>
-      <div class="small">${res.active===false?'It will start syncing once it’s approved. ':''}Add your crew: they scan this with their phone camera, open the link and tap Add to Home Screen.</div>
-      ${shareBlock()}
-      <button class="btn primary" type="button">Done</button>
-    </div>`);
-    drawQR($('#sheet [data-qr]'), shareLink());
-    $('#sheet .btn.primary').addEventListener('click', closeSheet);
+    switchTo(res.code, res.ranch); cfg.role='full'; cfg.crewCode=res.crewCode||''; LS.set(K.cfg,cfg); renderSetup();
+    openShare(`${res.ranch} is ready. Add your crew`);
     sync();
   });
 }
@@ -704,13 +735,13 @@ function openAnimal(id){
         <label class="f">Second brand (optional)<input id="a-b2" type="text" value="${esc(a.brand2||'')}"></label>
       </div>
       <label class="f">Notes<textarea id="a-notes">${esc(a.notes||'')}</textarea></label>
-      <div class="grid2">
+      ${fin()?`      <div class="grid2">
         <label class="f">Purchase price ($)<input id="a-pp" type="text" inputmode="decimal" value="${esc(mv('purchasePrice'))}"></label>
         <label class="f">Purchase date<input id="a-pd" type="date" value="${esc(a.purchaseDate||'')}"></label>
         <label class="f">Sale price ($)<input id="a-sp" type="text" inputmode="decimal" value="${esc(mv('salePrice'))}"></label>
         <label class="f">Sale date<input id="a-sd" type="date" value="${esc(a.saleDate||'')}"></label>
       </div>
-      <div class="small muted" id="a-margin"></div>
+      <div class="small muted" id="a-margin"></div>`:''}
       <div id="a-warn"></div>
       <div class="bar"><button class="btn primary" type="submit" style="flex:1">${id?'Save changes':'Add animal'}</button>${id?'<button class="btn danger" type="button" id="a-del">Delete</button>':''}</div>
     </form>
@@ -724,7 +755,7 @@ function openAnimal(id){
   `);
   const margin=()=>{ const p=parseMoney($('#a-pp').value), s=parseMoney($('#a-sp').value);
     $('#a-margin').textContent = (typeof p==='number' && typeof s==='number') ? `Difference: ${money(s-p)}` : ''; };
-  $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
+  if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin(); }
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
     $('#a-warn').innerHTML = d?`<div class="notice warn">Collar ${esc(v)} is already on ${esc(label(d))}${d.group?' in '+esc(d.group):''}.</div>`
@@ -746,20 +777,21 @@ function openAnimal(id){
   }
   $('#af').addEventListener('submit', e=>{
     e.preventDefault();
-    const pp=parseMoney($('#a-pp').value), sp=parseMoney($('#a-sp').value);
+    const pp=fin()?parseMoney($('#a-pp').value):'', sp=fin()?parseMoney($('#a-sp').value):'';
     if(pp===null || sp===null){ $('#a-warn').innerHTML='<div class="notice warn">Prices should be numbers, like 2450 or 2450.50.</div>'; return; }
     const v={ kind:$('#a-kind').value, collar:collarInput.value.trim(), group:$('#a-group').value.trim(), brand1:$('#a-b1').value.trim(), brand2:$('#a-b2').value.trim(), collarOn:$('#a-on').checked, notes:$('#a-notes').value.trim(),
-      purchasePrice:pp, purchaseDate:$('#a-pd').value, salePrice:sp, saleDate:$('#a-sd').value };
+      purchasePrice:pp, purchaseDate:fin()?$('#a-pd').value:'', salePrice:sp, saleDate:fin()?$('#a-sd').value:'' };
+    if(!fin()) FIN.forEach(k=>delete v[k]);
     if(!v.collar && !v.brand1){ $('#a-warn').innerHTML='<div class="notice warn">Enter a collar number or a brand so you can find this animal later.</div>'; return; }
     const now=Date.now();
     if(!id){
       const nid=rid();
       put('animals/'+nid, {...v, createdAt:now, updatedAt:now, updatedBy:me()});
-      logChange(nid,'animal',label(v),'added',FIELDS.filter(([k])=>v[k]!==''&&v[k]!==false).map(([k])=>({f:k,to:v[k]})));
+      logChange(nid,'animal',label(v),'added',FIELDS.filter(([k])=>k in v&&v[k]!==''&&v[k]!==false).map(([k])=>({f:k,to:v[k]})));
       closeSheet(); toast('Added '+label(v));
     } else {
       const blank = k => k==='collarOn'?false:'';
-      const changes=FIELDS.filter(([k])=>(a[k]??blank(k))!==v[k]).map(([k])=>({f:k,from:a[k]??'',to:v[k]}));
+      const changes=FIELDS.filter(([k])=>k in v&&(a[k]??blank(k))!==v[k]).map(([k])=>({f:k,from:a[k]??'',to:v[k]}));
       if(!changes.length){ closeSheet(); return; }
       const upd={updatedAt:now, updatedBy:me()}; changes.forEach(c=>upd[c.f]=v[c.f]);
       patch('animals/'+id, upd);
@@ -848,10 +880,10 @@ async function saveFile(filename, data, type){
   toast('Saved '+filename);
 }
 $('#exportCsv').addEventListener('click', ()=>{
-  const rows=[['type','collar','group','brand1','brand2','collar_fitted','notes','purchase_price','purchase_date','sale_price','sale_date','bulls_with','last_updated']];
+  const F=fin(); const rows=[['type','collar','group','brand1','brand2','collar_fitted','notes'].concat(F?['purchase_price','purchase_date','sale_price','sale_date']:[],['bulls_with','last_updated'])];
   animals().sort(byCollar).forEach(a=>{
     const bw = a.kind==='bull' ? '' : expsForCow(a.id).map(x=>`${label(S.animals.get(x.bullId))} ${x.start}${x.end?' to '+x.end:''}`).join('; ');
-    rows.push([KIND[a.kind]||'Cow',a.collar,a.group,a.brand1,a.brand2,a.collarOn?'yes':'no',a.notes,a.purchasePrice??'',a.purchaseDate||'',a.salePrice??'',a.saleDate||'',bw,a.updatedAt?new Date(a.updatedAt).toISOString():'']);
+    rows.push([KIND[a.kind]||'Cow',a.collar,a.group,a.brand1,a.brand2,a.collarOn?'yes':'no',a.notes].concat(F?[a.purchasePrice??'',a.purchaseDate||'',a.salePrice??'',a.saleDate||'']:[],[bw,a.updatedAt?new Date(a.updatedAt).toISOString():'']));
   });
   saveFile(`herd-${today()}.csv`, rows.map(r=>r.map(csvCell).join(',')).join('\n'), 'text/csv');
 });
@@ -886,6 +918,7 @@ $('#importFile').addEventListener('change', async e=>{
     const pp=parseMoney(get(r,ix.pp)), sp=parseMoney(get(r,ix.sp));
     const v={kind, collar:get(r,ix.collar), group:get(r,ix.group), brand1:get(r,ix.b1), brand2:get(r,ix.b2), notes:get(r,ix.notes), collarOn:/^(y|yes|true|1)$/i.test(get(r,ix.on)),
       purchasePrice:pp??'', purchaseDate:date(get(r,ix.pd)), salePrice:sp??'', saleDate:date(get(r,ix.sd))};
+    if(!fin()) FIN.forEach(k=>delete v[k]);
     if((!v.collar&&!v.brand1) || (v.collar && existing.has(v.collar.toLowerCase()))){ skipped++; continue; }
     outbox.push({op:'set', path:'animals/'+rid(), data:{...v, createdAt:now, updatedAt:now, updatedBy:me()}, t:now});
     added++; if(v.collar) existing.add(v.collar.toLowerCase());

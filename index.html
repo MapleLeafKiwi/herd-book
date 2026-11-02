@@ -132,6 +132,9 @@ label.check input{width:24px;height:24px}
 .sync{min-width:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .qr{background:#fff;padding:10px;border-radius:12px;width:min(240px,100%)}
 .qr svg{display:block;width:100%;height:auto}
+.hrow{align-items:center}
+.hrow .sync{margin-left:auto}
+.sharebtn{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-weight:700;cursor:pointer}
 .sync.off{color:var(--warn);font-weight:700}
 .conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
 .ro{margin-bottom:12px}
@@ -158,7 +161,7 @@ label.check input{width:24px;height:24px}
 <body>
 <header>
   <div class="wrap">
-    <div class="hrow"><h1>Herd Book</h1><span class="sync" id="sync">Connecting…</span></div>
+    <div class="hrow"><h1>Herd Book</h1><span class="sync" id="sync">Connecting…</span><button type="button" class="sharebtn" id="shareBtn" hidden>Share</button></div>
     <nav>
       <a href="#herd" data-tab="herd">Herd</a>
       <a href="#yard" data-tab="yard">Yard</a>
@@ -224,11 +227,6 @@ label.check input{width:24px;height:24px}
       <label class="f">Your name (shown in the change log)<input id="cfg-name" type="text" autocomplete="name"></label>
       <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save name</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
       <div class="small" id="cfg-status"></div>
-      <div id="shareBox" hidden data-share style="display:flex;flex-direction:column;gap:10px">
-        <b>Add someone to this ranch</b>
-        <div class="small muted">They scan this with their phone camera, open the link, then tap Add to Home Screen. Or send them the link.</div>
-        <div data-body style="display:flex;flex-direction:column;gap:10px"></div>
-      </div>
       <details><summary class="small">Change ranch or sync address</summary>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
           <div><button class="btn" id="switchRanch" type="button">Join or start a different ranch</button></div>

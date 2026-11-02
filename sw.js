@@ -1,5 +1,5 @@
 // Herd Book service worker: keeps the app on the phone so it opens with no signal.
-const CACHE = 'herdbook-v4';
+const CACHE = 'herdbook-v5';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './qrcode.js'];
 
 self.addEventListener('install', e => {
