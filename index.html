@@ -157,6 +157,12 @@ nav a{flex:1 0 auto}
 .scanthumb{width:96px;height:auto;border-radius:6px;flex:none}
 .scanpick{font-variant-numeric:tabular-nums;text-align:left}
 div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+.swap-bar{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.swap-bar .btn{min-height:40px;padding:8px 12px;background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.swapqr{width:min(340px,100%)}
+.swapvid{width:100%;max-width:420px;border-radius:12px;background:#000;aspect-ratio:4/3;object-fit:cover}
+.progress{width:100%;max-width:420px;height:10px;background:var(--sunk);border-radius:999px;overflow:hidden}
+.progress>div{height:100%;width:0;background:var(--ok);transition:width .2s}
 .sync.off{color:var(--warn);font-weight:700}
 .conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
 .ro{margin-bottom:12px}
@@ -197,6 +203,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 </header>
 
 <main class="wrap">
+  <button type="button" class="swap-bar" id="swapBar" hidden></button>
   <button type="button" class="conflict-bar" id="conflictBar" hidden></button>
   <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#log">Log › Ranch &amp; phone setup</a>.</div>
 
@@ -290,6 +297,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 <div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
 
+<script>window.HERDBOOK_SYNC_URL="https://script.google.com/macros/s/AKfycbzvLj8qxIFo0QWNJjINmINsZrzhFo25Uzi8TJ1NaLqFgMMDfyUj-S_9j-R2XaCBus3HLg/exec";</script>
 <script src="qrcode.js"></script>
 <script src="app.js"></script>
 </body>

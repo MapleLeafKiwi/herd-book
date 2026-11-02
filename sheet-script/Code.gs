@@ -148,8 +148,10 @@ function sync_(body) {
 
   if (ops.length) {
     rev = Math.max(Date.now(), rev + 1);
+    const done = appliedOps_(ss), fresh = [];
     ops.forEach(op => {
       if (!op || !TABS[op.col] || !op.id) return;
+      if (op.oid) { if (done[op.oid]) return; done[op.oid] = true; fresh.push([String(op.oid), new Date()]); }   // a change passed phone-to-phone arrives more than once: apply it once
       if (crew) {                                              // crew can't see or change money, even by crafting a request
         if (CREW_BLOCK.indexOf(op.col) >= 0) return;
         const hide = CREW_HIDE[op.col] || [];
@@ -159,6 +161,7 @@ function sync_(body) {
       apply_(table(op.col), op, rev, conflicts, crew);
     });
     Object.keys(tables).forEach(k => save_(tables[k]));
+    if (fresh.length) { const sh = ss.getSheetByName('_sync'); ensure_(sh, sh.getLastRow() + fresh.length, 2); sh.getRange(sh.getLastRow() + 1, 1, fresh.length, 2).setValues(fresh); }
     props.setProperty(revKey, String(rev));
   }
 
@@ -177,6 +180,15 @@ function sync_(body) {
     if (!crewCode) { crewCode = newCode_(); ranchesSheet_().getRange(ranch.row, 3).setValue(crewCode); }
     out.crewCode = crewCode;
   }
+  return out;
+}
+
+// Ids of every change already applied, so the same change uploaded by two phones only counts once.
+function appliedOps_(ss) {
+  let sh = ss.getSheetByName('_sync');
+  if (!sh) { sh = ss.insertSheet('_sync'); sh.getRange(1, 1, 1, 2).setValues([['change id', 'applied']]); sh.hideSheet && sh.hideSheet(); }
+  const n = sh.getLastRow(), out = {};
+  if (n > 1) sh.getRange(2, 1, n - 1, 1).getValues().forEach(r => { if (r[0] !== '') out[String(r[0])] = true; });
   return out;
 }
 

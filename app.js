@@ -51,7 +51,7 @@ try{ navigator.storage && navigator.storage.persist && navigator.storage.persist
 
 let mirrorTimer=null;
 function saveMirror(){ clearTimeout(mirrorTimer); mirrorTimer=setTimeout(()=>{ mirror.at=S.lastSync; if(!LS.set(K.mirror,mirror)) storageOk=false; },300); }
-function saveOutbox(){ if(!LS.set(K.outbox,outbox)){ storageOk=false; toast('This phone is out of storage space. Get signal and sync before making more changes.'); } }
+function saveOutbox(){ outbox.forEach(o=>{ if(!o.oid) o.oid=rid(); }); if(!LS.set(K.outbox,outbox)){ storageOk=false; toast('This phone is out of storage space. Get signal and sync before making more changes.'); } }
 
 function recompute(){
   const cur = {}; COLS.forEach(c=>{ cur[c] = {...mirror[c]}; }); const pendingHist=[];
@@ -92,6 +92,7 @@ function queue(op, path, data, base){
     // fold repeated edits to the same record into one pending change
     for(let i=outbox.length-1; i>=inflight; i--){
       const o=outbox[i]; if(o.path!==path) continue;
+      if(o.shared || o.via) break;               // already handed to another phone: keep it exactly as sent
       if(o.op==='update'){ o.data={...o.data,...data}; if(base) o.base={...base,...(o.base||{})}; o.t=Date.now(); return done(); }
       if(o.op==='set'){ o.data={...o.data,...data}; o.t=Date.now(); return done(); }
       break;
@@ -138,7 +139,7 @@ async function sync(){
   try{
     do{
       const batch = outbox.slice(0,150); inflight = batch.length;
-      const ops = batch.map(o=>{ const i=o.path.indexOf('/'); return {col:o.path.slice(0,i), id:o.path.slice(i+1), patch:o.data, base:o.base||null, create:o.op==='set', del:o.op==='delete'}; });
+      const ops = batch.map(o=>{ const i=o.path.indexOf('/'); return {col:o.path.slice(0,i), id:o.path.slice(i+1), patch:o.data, base:o.base||null, create:o.op==='set', del:o.op==='delete', oid:o.oid}; });
       let res;
       try{ res = await post({code:cfg.code, since:mirror.rev||0, ops}); } finally { inflight = 0; }
       if(res && res.ok && Array.isArray(res.conflicts) && res.conflicts.length) takeConflicts(res.conflicts, batch);
@@ -151,15 +152,16 @@ async function sync(){
       outbox.splice(0, batch.length); saveOutbox();
       mergeChanges(res.changes); mirror.rev = res.rev || mirror.rev;
       if(res.ranch!==undefined && (res.ranch!==cfg.ranchName || res.role!==cfg.role || (res.crewCode||'')!==(cfg.crewCode||''))){ cfg.ranchName=res.ranch; cfg.role=res.role; cfg.crewCode=res.crewCode||''; LS.set(K.cfg,cfg); }
-      S.lastSync = Date.now(); lastErr=''; saveMirror();
+      S.lastSync = Date.now(); lastErr=''; netDown=false; saveMirror();
     } while(outbox.length);
   }catch(e){
+    netDown = true;
     lastErr = navigator.onLine===false ? '' : 'Couldn’t reach the sheet. Trying again shortly.';
   }finally{
     syncing=false; recompute(); renderSetup();
   }
 }
-window.addEventListener('online', ()=>{ updateSync(); sync(); });
+window.addEventListener('online', ()=>{ netDown=false; updateSync(); sync(); });
 window.addEventListener('offline', updateSync);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sync(); });
 setInterval(()=>{ if(!document.hidden) sync(); }, 60000);
@@ -176,6 +178,7 @@ function updateSync(){
   else if(n) t = `${n} change${n>1?'s':''} waiting to send`;
   else t = S.lastSync ? 'Synced '+ago(S.lastSync) : 'Ready';
   el.textContent=(cfg.ranchName?cfg.ranchName+' · ':'')+t; el.classList.toggle('off',off);
+  renderSwapBar();
   $('#setupBanner').hidden = !!(syncUrl() && cfg.code);
 }
 
@@ -545,7 +548,10 @@ function openConflicts(){
     const b=e.target.closest('[data-keep]'); if(!b) return;
     const c=conflicts[+b.dataset.i]; if(!c) return;
     const path=c.col+'/'+c.id, now=Date.now();
-    if(b.dataset.keep==='mine'){
+    if(c.local){
+      resolveLocalClash(c, b.dataset.keep==='mine'?'mine':'theirs');
+      logChange(c.id, c.col, c.what, b.dataset.keep==='mine' ? `kept ${me()}’s version over ${c.by}’s` : `kept ${c.by}’s version`, [{f:c.field, from:b.dataset.keep==='mine'?c.theirs:c.mine, to:b.dataset.keep==='mine'?c.mine:c.theirs}]);
+    } else if(b.dataset.keep==='mine'){
       patch(path, {[c.field]:c.mine, updatedAt:now, updatedBy:me()}, {[c.field]:c.theirs});
       logChange(c.id, c.col, c.what, `kept ${me()}’s version over ${c.by||'the other phone'}’s`, [{f:c.field, from:c.theirs, to:c.mine}]);
     } else if(b.dataset.keep==='restore' && c.record){
@@ -723,7 +729,7 @@ function openStart(force){
 
 // ---------- sheet ----------
 function openSheet(html){ $('#sheet').innerHTML=html; $('#scrim').hidden=false; }
-function closeSheet(){ $('#scrim').hidden=true; $('#sheet').innerHTML=''; }
+function closeSheet(){ stopSwap(); $('#scrim').hidden=true; $('#sheet').innerHTML=''; }
 $('#scrim').addEventListener('click', e=>{ if(e.target.id==='scrim' || e.target.closest('.x')) closeSheet(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('#scrim').hidden) closeSheet(); });
 
@@ -1526,6 +1532,149 @@ function openFitCollar(id){
   });
 }
 
+// ---------- swap with a nearby phone (no signal): changes travel as QR codes, screen to camera ----------
+const SWAP_CHUNK = 700;
+const MONEY_KEYS = { animals:['purchasePrice','purchaseDate','salePrice','saleDate'], treatments:['cost'] };
+const MONEY_F_ALL = ['purchasePrice','purchaseDate','salePrice','saleDate','cost','amount'];
+let netDown = false;
+const offlineNow = () => navigator.onLine===false || netDown;
+function renderSwapBar(){
+  const b=$('#swapBar'); if(!b) return;
+  b.hidden = !(cfg.code && offlineNow());
+  const n=outbox.length;
+  b.innerHTML = `<span><b>No signal.</b> ${n?`${n} change${n>1?'s':''} on this phone.`:'Up to date as of last sync.'}</span><span class="btn">Swap with nearby phone</span>`;
+}
+// Changes this phone can pass on: never money, never expenses.
+function shareableOps(){
+  return outbox.filter(o=>{
+    const col=o.path.slice(0,o.path.indexOf('/'));
+    if(col==='expenses') return false;
+    if(col==='history' && o.data && o.data.targetType==='expense') return false;
+    return true;
+  }).map(o=>{
+    const col=o.path.slice(0,o.path.indexOf('/'));
+    const strip = d => { if(!d) return d; const x={...d}; (MONEY_KEYS[col]||[]).forEach(k=>delete x[k]); delete x.sold;
+      if(col==='history' && Array.isArray(x.changes)) x.changes=x.changes.filter(c=>MONEY_F_ALL.indexOf(c.f)<0); return x; };
+    return [o.op, o.path, strip(o.data), strip(o.base), o.t, o.oid, o.from||me()];
+  });
+}
+const b64 = u8 => { let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null, u8.subarray(i,i+0x8000)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+async function pack(obj){
+  const raw=new TextEncoder().encode(JSON.stringify(obj));
+  if(typeof CompressionStream==='function'){
+    const out=await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+    return 'z'+b64(new Uint8Array(out));
+  }
+  return 'j'+b64(raw);
+}
+async function unpack(s){
+  const bytes=unb64(s.slice(1));
+  if(s[0]==='z'){ const out=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer(); return JSON.parse(new TextDecoder().decode(out)); }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function swapFrames(){
+  saveOutbox();                                              // makes sure every change has its own id
+  const ops=shareableOps();
+  const data=await pack({v:1, from:me(), ranch:cfg.ranchName||'', at:Date.now(), ops});
+  const sid=rid().slice(-6), n=Math.max(1, Math.ceil(data.length/SWAP_CHUNK)), frames=[];
+  for(let i=0;i<n;i++) frames.push(`HB1|${sid}|${i+1}|${n}|${data.slice(i*SWAP_CHUNK,(i+1)*SWAP_CHUNK)}`);
+  return { frames, count:ops.length };
+}
+// Receiving: frames arrive in any order, any number of times.
+function swapCollector(){
+  const got=new Map(); let sid='', n=0;
+  return { add(text){ const m=String(text).match(/^HB1\|(\w+)\|(\d+)\|(\d+)\|(.*)$/s); if(!m) return {bad:true};
+      if(sid && m[1]!==sid){ got.clear(); } sid=m[1]; n=Number(m[3]); got.set(Number(m[2]), m[4]);
+      return { have:got.size, need:n, done:got.size===n }; },
+    joined(){ let s=''; for(let i=1;i<=n;i++) s+=got.get(i)||''; return s; } };
+}
+async function swapReceive(payloadText){
+  const p=await unpack(payloadText);
+  if(!p || p.v!==1 || !Array.isArray(p.ops)) return { error:'That code isn’t from Herd Book.' };
+  if(p.ranch && cfg.ranchName && p.ranch!==cfg.ranchName) return { error:`Those changes are from ${p.ranch}, not ${cfg.ranchName}. Nothing was added.` };
+  if(syncing) return { error:'This phone is syncing. Try again in a moment.' };
+  const have=new Set(outbox.map(o=>o.oid)); let added=0; const clashes=[];
+  const norm = v => v===true?'true':v===false?'false':v==null?'':String(v);
+  p.ops.forEach(([op,path,data,base,t,oid,from])=>{
+    if(!oid || have.has(oid)) return;
+    const col=path.slice(0,path.indexOf('/'));
+    if(col==='expenses' || !['animals','exposures','collars','treatments','preg','history'].includes(col)) return;
+    const entry={op, path, data:data||null, base:base||null, t:Number(t)||Date.now(), oid, via:'qr', from:from||p.from};
+    // Same field changed differently on this phone? Ask which to keep, like normal sync.
+    if(op==='update' && data) outbox.filter(o=>o.path===path && !o.via && o.data).forEach(own=>{
+      Object.keys(data).forEach(k=>{ if(META.has(k) || !(k in own.data) || norm(own.data[k])===norm(data[k])) return;
+        if(base && k in base && norm(base[k])===norm(own.data[k])) return;   // they already saw this phone's value and chose theirs
+        const i=path.indexOf('/');
+        clashes.push({ key:`${path}|${k}|qr`, local:true, col, id:path.slice(i+1), type:'field', field:k, mine:own.data[k], theirs:data[k], by:entry.from||'Other phone', at:entry.t, myAt:own.t, ownOid:own.oid, relOid:oid, what:whatOf(col, path.slice(i+1)) }); });
+    });
+    outbox.push(entry); have.add(oid); added++;
+  });
+  outbox.sort((a,b)=>(a.t||0)-(b.t||0));
+  saveOutbox();
+  if(clashes.length){ conflicts = conflicts.filter(x=>!clashes.some(c=>c.key===x.key)).concat(clashes); saveConflicts(); }
+  recompute();
+  return { added, from:p.from, clashes:clashes.length };
+}
+// Resolve a clash found during a swap, without asking again when the sheet sees both changes.
+function resolveLocalClash(c, keep){
+  const own=outbox.find(o=>o.oid===c.ownOid), rel=outbox.find(o=>o.oid===c.relOid);
+  if(keep==='mine'){ if(own && own.op==='update'){ own.base={...(own.base||{}), [c.field]:c.theirs}; own.t=Date.now(); } if(rel){ delete rel.data[c.field]; if(rel.base) delete rel.base[c.field]; } outbox.sort((a,b)=>(a.t||0)-(b.t||0)); }
+  else { if(own){ delete own.data[c.field]; if(own.base) delete own.base[c.field]; } }
+  saveOutbox(); recompute();
+}
+
+let swapTimer=null, swapStream=null, swapRAF=null;
+function stopSwap(){ clearInterval(swapTimer); swapTimer=null; if(swapRAF) cancelAnimationFrame(swapRAF); swapRAF=null; if(swapStream){ swapStream.getTracks().forEach(t=>t.stop()); swapStream=null; } }
+function openSwap(){
+  openSheet(`<div id="sw" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>Swap with nearby phone</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="small">No signal needed. One phone shows its changes as a moving QR code and the other points its camera at it. Then swap over.${fin()?' Prices and expenses are never included.':''}</div>
+    <div class="seg" id="sw-mode"><button type="button" data-m="show" aria-pressed="true">Show my changes</button><button type="button" data-m="scan" aria-pressed="false">Scan their changes</button></div>
+    <div id="sw-body" style="display:flex;flex-direction:column;gap:10px;align-items:center"></div>
+  </div>`);
+  const body=$('#sw-body');
+  const show = async () => {
+    stopSwap();
+    const { frames, count } = await swapFrames();
+    if(!count){ body.innerHTML='<div class="notice ok">This phone has no unsent changes to share. You can still scan theirs.</div>'; return; }
+    body.innerHTML=`<div class="qr swapqr" id="sw-qr"></div><div class="small"><b>${count}</b> change${count>1?'s':''} · code <span id="sw-i">1</span> of ${frames.length}</div><div class="small muted">Hold steady until the other phone says it has everything. Turn your screen brightness up.</div>`;
+    let i=0; const draw=()=>{ const el=$('#sw-qr'); if(!el){ stopSwap(); return; } const q=qrcode(0,'L'); q.addData(frames[i]); q.make(); el.innerHTML=q.createSvgTag({cellSize:4, margin:4, scalable:true}); $('#sw-i').textContent=i+1; i=(i+1)%frames.length; };
+    draw(); if(frames.length>1) swapTimer=setInterval(draw, 450);
+    frames.length && outbox.forEach(o=>{ if(!o.via) o.shared=true; }); saveOutbox();
+  };
+  const scan = async () => {
+    stopSwap();
+    body.innerHTML=`<video id="sw-vid" playsinline muted class="swapvid"></video><div class="progress"><div id="sw-bar"></div></div><div id="sw-msg" class="small">Point the camera at the other phone’s code.</div>`;
+    try{
+      await loadScript2('./jsqr.min.js');
+      swapStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio:false });
+    }catch(e){ $('#sw-msg').innerHTML='<span class="warn-text">The camera couldn’t start. Allow camera access for Herd Book in your phone’s settings, then try again.</span>'; return; }
+    const v=$('#sw-vid'); v.srcObject=swapStream; await v.play().catch(()=>{});
+    const c=document.createElement('canvas'), x=c.getContext('2d', {willReadFrequently:true}); const col=swapCollector(); let last=0, busy=false;
+    const tick = async ts => {
+      if(!swapStream) return; swapRAF=requestAnimationFrame(tick);
+      if(busy || ts-last<120 || !v.videoWidth) return; last=ts;
+      const s=Math.min(1, 720/Math.max(v.videoWidth,v.videoHeight)); c.width=Math.round(v.videoWidth*s); c.height=Math.round(v.videoHeight*s);
+      x.drawImage(v,0,0,c.width,c.height); const img=x.getImageData(0,0,c.width,c.height);
+      const r=window.jsQR && jsQR(img.data, c.width, c.height, {inversionAttempts:'dontInvert'}); if(!r) return;
+      const st=col.add(r.data); if(st.bad) return;
+      $('#sw-bar').style.width=Math.round(st.have/st.need*100)+'%'; $('#sw-msg').textContent=`Got ${st.have} of ${st.need} codes…`;
+      if(st.done){ busy=true; stopSwap();
+        let res; try{ res=await swapReceive(col.joined()); }catch{ res={error:'Those codes couldn’t be read. Try again.'}; }
+        body.innerHTML = res.error ? `<div class="notice warn">${esc(res.error)}</div>` : `<div class="notice ok">Added ${res.added} change${res.added===1?'':'s'} from ${esc(res.from||'the other phone')}.${res.clashes?` ${res.clashes} clash${res.clashes>1?'es':''} to sort out.`:''}</div><button type="button" class="btn primary" id="sw-flip">Now show mine</button>`;
+        const f=$('#sw-flip'); f && f.addEventListener('click', ()=>$('#sw-mode [data-m=show]').click());
+        if(res.clashes) setTimeout(openConflicts, 1200);
+      }
+    };
+    swapRAF=requestAnimationFrame(tick);
+  };
+  $('#sw-mode').addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; $('#sw-mode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); (b.dataset.m==='show'?show:scan)(); });
+  show();
+}
+function loadScript2(src){ return new Promise((res,rej)=>{ if(document.querySelector(`script[data-src="${src}"]`) && window.jsQR) return res(); const s=document.createElement('script'); s.src=src; s.dataset.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+$('#swapBar').addEventListener('click', openSwap);
+
 // ---------- boot ----------
 function renderAll(){
   if(S.tab==='herd') renderHerd(); else if(S.tab==='yard') renderYard(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='breeding') renderBreeding(); else if(S.tab==='health') renderHealth(); else if(S.tab==='money') renderMoney(); else renderLog();
@@ -1538,5 +1687,5 @@ sync();
   wireScan('#yq-photo', '#yScan', n=>{ $('#yq').value=n; renderYard(); }); })();
 warmOcr(); window.addEventListener('online', warmOcr);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
-window.__herdbook = { sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg };
+window.__herdbook = { sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg, swapFrames, swapCollector, swapReceive };
 })();
