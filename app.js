@@ -497,6 +497,20 @@ function wearers(){ const m=new Map(); onHand().forEach(a=>{ if(a.collar){ const
 // unknownAt (date fitted), unknownGroup, unknownNote. No placeholder animal, so herd counts and exports are untouched.
 const onUnknown = c => !!(c && c.status!=='lost' && c.unknownAt);
 const unknownCollars = () => collarList().filter(onUnknown);
+// ---- collar order: the line of collars ready at the chute, next one first ----
+// Each collar's place in the line is `seq` on the collar record ('' = not in the line). Line changes are sent
+// without a clash check (empty base): two phones reordering just take the latest order.
+const seqOf = c => (c && c.seq!=='' && c.seq!=null && !isNaN(Number(c.seq))) ? Number(c.seq) : null;
+const lineable = (c, w) => c.status!=='lost' && !c.unknownAt && !(w.get(ckey(c.number))||[]).some(a=>a.collarOn);
+function collarLine(){ const w=wearers(); return collarList().filter(c=>seqOf(c)!=null && lineable(c,w)).sort((a,b)=>seqOf(a)-seqOf(b)); }
+const orderOn = () => collarLine().length>0;
+function setLine(list){
+  const keep=new Set(list.map(c=>c.id)), t=Date.now();
+  bulk(()=>{
+    list.forEach((c,i)=>{ if(seqOf(c)!==i+1) patch('collars/'+c.id, {seq:i+1, updatedAt:t, updatedBy:me()}, {}); });
+    collarList().forEach(c=>{ if(!keep.has(c.id) && seqOf(c)!=null) patch('collars/'+c.id, {seq:'', updatedAt:t, updatedBy:me()}, {}); });
+  });
+}
 function collarState(c, w){
   if(c.status==='lost') return 'lost';
   if(c.unknownAt) return 'fitted';
@@ -511,7 +525,8 @@ function parseNums(t){
     if(!tok) return;
     const m=tok.match(/^([A-Za-z]*)(\d+)-[A-Za-z]*(\d+)$/);
     if(m){ const [,p,a,b]=m; const lo=Math.min(+a,+b), hi=Math.max(+a,+b); if(hi-lo>2000) return;
-      const pad=a.length>1&&a[0]==='0'?a.length:0; for(let i=lo;i<=hi;i++) out.push(p+String(i).padStart(pad,'0')); }
+      const pad=a.length>1&&a[0]==='0'?a.length:0; const down=+a>+b;   // a backwards range keeps its direction (for lining collars up)
+      for(let k=0;k<=hi-lo;k++) out.push(p+String(down?hi-k:lo+k).padStart(pad,'0')); }
     else out.push(tok);
   });
   return [...new Set(out)];
@@ -563,10 +578,11 @@ $('#seasonBtn').addEventListener('click', e=>{
   if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again to confirm'; return; }
   b.classList.remove('armed'); b.textContent='Start new season';
   const xs=onHand().filter(a=>a.collar&&a.collarOn), us=unknownCollars();
-  if(!xs.length && !us.length){ toast('No collars are marked fitted'); return; }
+  if(!xs.length && !us.length && !collarList().some(c=>seqOf(c)!=null)){ toast('No collars are marked fitted'); return; }
   const now=Date.now(), n=xs.length+us.length;
   xs.forEach(a=>outbox.push({op:'update', path:'animals/'+a.id, data:{collarOn:false, updatedAt:now, updatedBy:me()}, t:now}));
   us.forEach(c=>outbox.push({op:'update', path:'collars/'+c.id, data:{unknownAt:'', unknownGroup:'', unknownNote:'', updatedAt:now, updatedBy:me()}, t:now}));
+  collarList().filter(c=>seqOf(c)!=null).forEach(c=>outbox.push({op:'update', path:'collars/'+c.id, data:{seq:'', updatedAt:now, updatedBy:me()}, base:{}, t:now}));
   saveOutbox();
   logChange('season','season',`New season: ${n} collars marked not fitted`,'reset',[]);
   toast(`${n} collars marked not fitted`);
@@ -662,10 +678,10 @@ function openCollar(id){
     const off=e.target.closest('[data-off]'); if(off){ const x=S.animals.get(off.dataset.off);
       patch('animals/'+x.id, {collarOn:false, updatedAt:Date.now(), updatedBy:me()}); logChange(x.id,'animal',label(x),'collar taken off',[{f:'collarOn',from:true,to:false}]);
       toast(`Collar ${c.number} taken off`); return openCollar(id); }
-    if(e.target.closest('[data-fitc]')){ if(onUnknown(c)) return; closeSheet(); S.fCollar=c.number; S.fCow=''; const last=on[0]; if(last && needsCollar(last)) S.fCow=last.id; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; return; }
+    if(e.target.closest('[data-fitc]')){ if(onUnknown(c)) return; closeSheet(); S.fCollar=c.number; S.fCow=''; S.fNoAuto=false; const last=on[0]; if(last && needsCollar(last) && !orderOn()) S.fCow=last.id; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; return; }
     // A lost collar comes off any animal that had it, so that animal shows as needing one.
     if(e.target.closest('[data-lost]')){ const lost=c.status!=='lost', now=Date.now();
-      patch('collars/'+id, Object.assign({status:lost?'lost':'ok', updatedAt:now, updatedBy:me()}, lost?{unknownAt:'', unknownGroup:'', unknownNote:''}:{}));
+      patch('collars/'+id, Object.assign({status:lost?'lost':'ok', updatedAt:now, updatedBy:me()}, lost?{unknownAt:'', unknownGroup:'', unknownNote:'', seq:''}:{}));
       if(lost) on.forEach(x=>{ patch('animals/'+x.id, {collar:'', collarOn:false, updatedAt:now, updatedBy:me()}); logChange(x.id,'animal',label(x),'collar lost',[{f:'collar',from:x.collar,to:''}]); });
       logChange(id,'collar',`Collar ${c.number}`,'edited',[{f:'Collar status',from:lost?'in use':'lost',to:lost?'lost':'in use'}]);
       toast(lost?`Collar ${c.number} marked lost`:`Collar ${c.number} back in use`); return openCollar(id); }
@@ -1002,7 +1018,7 @@ function openAnimal(id){
     $('#a-margin').textContent = (typeof p==='number' && typeof s==='number') ? `Difference: ${money(s-p)}` : ''; };
   if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
     $('#a-sd').addEventListener('change', ()=>{ const w=id&&withdrawalUntil(id); if(w && $('#a-sd').value && $('#a-sd').value<=w) $('#a-warn').innerHTML=`<div class="notice warn">This animal is on withdrawal until ${esc(fmtDate(w))}.</div>`; }); }
-  $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else if(b.dataset.goto==='fit'){ closeSheet(); S.fCow=id; S.fCollar=''; const a=S.animals.get(id); if(a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; } else openTreatment(null,[id]); }));
+  $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else if(b.dataset.goto==='fit'){ closeSheet(); S.fCow=id; S.fCollar=''; S.fNoAuto=false; const a=S.animals.get(id); if(a && a.collar && fitFree(a.collar, a.id) && !orderOn()) S.fCollar=a.collar; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; } else openTreatment(null,[id]); }));
   $('#a-group').addEventListener('change', e=>{ const nw=e.target.value==='__new'; $('#a-gnew').hidden=!nw; if(nw) $('#a-gnew').focus(); });
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
@@ -1745,6 +1761,10 @@ function renderFit(){
   if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || !needsCollar(a)) S.fCow=''; }
   if(S.fCollar){ const c=collarFor(S.fCollar); if(c && c.status==='lost') S.fCollar=''; }
   const qRaw=$('#fq').value.trim(), q=ckey(qRaw);
+  // with a collar order, the next collar in line is picked ready to use
+  const line=collarLine(), ordered=line.length>0;
+  if(ordered && !S.fCollar && !S.fNoAuto) S.fCollar=line[0].number;
+  $('#ordBtn').textContent = ordered ? `Collar order · ${line.length}` : 'Order collars';
   // collar side
   const cl=fitCollars();
   let notice='';
@@ -1758,6 +1778,16 @@ function renderFit(){
       <button type="button" class="fpick" data-num="${esc(qRaw)}" aria-pressed="${ckey(S.fCollar)===q}"><span class="collar long">${esc(qRaw)}</span><span class="main"><b>Use this new collar</b><span class="sub">Adds it to your collar list</span></span></button>`;
   }
   $('#fNotice').innerHTML=notice;
+  const pickBtn = (x, sub) => `<button type="button" class="fpick" data-num="${esc(x.num)}" aria-pressed="${ckey(S.fCollar)===ckey(x.num)}">${collarHtml({collar:x.num})}<span class="main">${sub}</span></button>`;
+  const lastSub = x => x.last?`<span class="sub">Last on: ${esc(cowName(x.last))}</span>`:'<span class="sub">Ready to fit</span>';
+  if(ordered && !qRaw){
+    const inLine=new Set(line.map(c=>ckey(c.number))), w=wearers(), rest=cl.filter(x=>!inLine.has(ckey(x.num)));
+    const L=line.map(c=>({num:c.number, last:(w.get(ckey(c.number))||[])[0]}));
+    $('#fCollars').innerHTML = `<div class="nextcard">${pickBtn(L[0], '<b>Next collar</b>'+lastSub(L[0]))}
+        <div class="bar"><button type="button" class="btn" data-fskip="1">Skip</button><button type="button" class="btn danger" data-flost="1">Lost</button></div></div>`
+      + L.slice(1,150).map((x,i)=>pickBtn(x, `<span class="sub">${ordinal(i+2)} in line</span>`)).join('')
+      + (rest.length ? `<h3 class="ordhead">Not in the order</h3>` + rest.slice(0,150).map(x=>pickBtn(x, lastSub(x))).join('') : '');
+  } else
   $('#fCollars').innerHTML = cl.length ? cl.slice(0,150).map(x=>`<button type="button" class="fpick" data-num="${esc(x.num)}" aria-pressed="${ckey(S.fCollar)===ckey(x.num)}">${collarHtml({collar:x.num})}<span class="main">${x.last?`<span class="sub">Last on: ${esc(cowName(x.last))}</span>`:'<span class="sub">Ready to fit</span>'}</span></button>`).join('')
     : (notice ? '' : `<div class="empty"><strong>${q?'No collar matches':'No collars ready to fit'}</strong>${q?'Check the number, or try a photo.':'Add collars on the Collars tab, or type a new number above.'}</div>`);
   // cow side
@@ -1777,11 +1807,12 @@ function renderFit(){
   $('#fitPair').innerHTML = S.fCollar||cow ? `${S.fCollar?`Collar ${esc(S.fCollar)}`:'<span class="muted">Pick a collar</span>'} → ${cow?(cow.unknown?'animal not known':esc(cowName(cow))):'<span class="muted">pick an animal</span>'}` : '<span class="muted">Pick a collar and an animal</span>';
   $('#fitGo').disabled = !(S.fCollar && cow);
 }
+const ordinal = n => n+(n%100>=11&&n%100<=13?'th':['th','st','nd','rd'][n%10]||'th');
 function pickCollar(num){
-  if(ckey(S.fCollar)===ckey(num)){ S.fCollar=''; renderFit(); return; }
-  S.fCollar=num;
-  // the cow it was last on, if she still needs one
-  if(!S.fCow){ const last=onHand().find(a=>!a.collarOn && ckey(a.collar)===ckey(num) && needsCollar(a)); if(last) S.fCow=last.id; }
+  if(ckey(S.fCollar)===ckey(num)){ S.fCollar=''; S.fNoAuto=true; renderFit(); return; }
+  S.fCollar=num; S.fNoAuto=false;
+  // the animal it was last on, if it still needs one (not when collars are in an order)
+  if(!S.fCow && !orderOn()){ const last=onHand().find(a=>!a.collarOn && ckey(a.collar)===ckey(num) && needsCollar(a)); if(last) S.fCow=last.id; }
   if(!S.fCow && S.fSide==='collar' && window.matchMedia('(max-width:699px)').matches) S.fSide='cow';
   renderFit();
 }
@@ -1789,7 +1820,7 @@ function pickCow(id){
   if(S.fCow===id){ S.fCow=''; renderFit(); return; }
   S.fCow=id; const a=S.animals.get(id);
   // the animal's collar from last season, if it's free
-  if(!S.fCollar && a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar;
+  if(!S.fCollar && !orderOn() && a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar;
   if(!S.fCollar && S.fSide==='cow' && window.matchMedia('(max-width:699px)').matches) S.fSide='collar';
   renderFit();
 }
@@ -1803,6 +1834,7 @@ function fitPair(num, cowId){
     logChange(o.id,'animal',label(o),'collar moved to '+label(a),[{f:'collar',from:o.collar,to:''}].concat(o.collarOn?[{f:'collarOn',from:true,to:false}]:[]));
   });
   let added='';
+  const was=collarFor(num), wasSeq=seqOf(was); if(wasSeq!=null) patch('collars/'+was.id, {seq:'', updatedAt:now, updatedBy:me()}, {});
   if(!collarFor(num)){ added=cid(num); put('collars/'+added, {number:num, neckband:/^\d{6,}$/.test(num)?num:'', note:'', status:'ok', createdAt:now, updatedAt:now, updatedBy:me()}); }
   undo.push(['animals/'+a.id, {collar:a.collar||'', collarOn:!!a.collarOn}]);
   const ch=[]; if((a.collar||'')!==num) ch.push({f:'collar',from:a.collar||'',to:num}); if(!a.collarOn) ch.push({f:'collarOn',from:!!a.collarOn,to:true});
@@ -1812,6 +1844,7 @@ function fitPair(num, cowId){
     const t=Date.now();
     undo.forEach(([path,d])=>patch(path, {...d, updatedAt:t, updatedBy:me()}));
     if(added) remove('collars/'+added);
+    if(wasSeq!=null) patch('collars/'+was.id, {seq:wasSeq, updatedAt:t, updatedBy:me()}, {});
     logChange(a.id,'animal',label(a),'collar fitting undone',[{f:'collar',from:num,to:a.collar||''}]);
   };
 }
@@ -1819,7 +1852,8 @@ $('#fitGo').addEventListener('click', ()=>{
   if(S.fCollar && S.fCow==='unknown') return openFitUnknown(S.fCollar);
   const num=S.fCollar, cow=S.animals.get(S.fCow); if(!num || !cow) return;
   const undo=fitPair(num, cow.id);
-  S.fCollar=''; S.fCow=''; $('#fq').value=''; $('#fScan').innerHTML=''; $('#fcq').value='';
+  S.fCollar=''; S.fCow=''; S.fNoAuto=false; $('#fq').value=''; $('#fScan').innerHTML=''; $('#fcq').value='';
+  if(orderOn() && window.matchMedia('(max-width:699px)').matches) S.fSide='cow';
   renderFit();
   toast(`Collar ${num} fitted to ${cowName(cow)}`, ()=>{ undo(); toast('Undone'); });
 });
@@ -1842,9 +1876,10 @@ function openFitUnknown(num){
     let c=collarFor(num), added='';
     if(!c){ added=cid(num); put('collars/'+added, {number:num, neckband:/^\d{6,}$/.test(num)?num:'', note:'', status:'ok', unknownAt:today(), unknownGroup:group, unknownNote:note, createdAt:now, updatedAt:now, updatedBy:me()}); }
     else { undo.push(['collars/'+c.id, {unknownAt:c.unknownAt||'', unknownGroup:c.unknownGroup||'', unknownNote:c.unknownNote||''}]);
-      patch('collars/'+c.id, {unknownAt:today(), unknownGroup:group, unknownNote:note, updatedAt:now, updatedBy:me()}); }
+      patch('collars/'+c.id, {unknownAt:today(), unknownGroup:group, unknownNote:note, updatedAt:now, updatedBy:me()});
+      if(seqOf(c)!=null){ const sq=seqOf(c); patch('collars/'+c.id, {seq:'', updatedAt:now, updatedBy:me()}, {}); undo.push(['collars/'+c.id, {seq:sq}]); } }
     logChange(added||c.id,'collar',`Collar ${num}`,'fitted to an unknown animal',[{f:'Group',from:'',to:group||'not known'}].concat(note?[{f:'Description',from:'',to:note}]:[]));
-    closeSheet(); S.fCollar=''; S.fCow=''; $('#fq').value=''; $('#fScan').innerHTML=''; renderFit();
+    closeSheet(); S.fCollar=''; S.fCow=''; S.fNoAuto=false; $('#fq').value=''; $('#fScan').innerHTML=''; renderFit();
     toast(`Collar ${num} fitted to an unknown animal`, ()=>{ const t=Date.now(); undo.forEach(([path,d])=>patch(path,{...d, updatedAt:t, updatedBy:me()})); if(added) remove('collars/'+added); toast('Undone'); });
   });
 }
@@ -1885,7 +1920,83 @@ function openUnknown(i){
   });
 }
 $('#fitSwitch').addEventListener('click', e=>{ const b=e.target.closest('[data-side]'); if(!b) return; S.fSide=b.dataset.side; renderFit(); });
-$('#fCollars').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
+$('#fCollars').addEventListener('click', e=>{
+  // Skip: next collar goes to the back of the line. Lost: marked lost and out of the line.
+  if(e.target.closest('[data-fskip]')){ const L=collarLine(); if(L.length){ setLine(L.slice(1).concat(L[0])); S.fCollar=''; S.fNoAuto=false; renderFit(); toast(`Collar ${L[0].number} moved to the back`); } return; }
+  if(e.target.closest('[data-flost]')){ const L=collarLine(); if(!L.length) return; const c=L[0], sq=seqOf(c), t=Date.now();
+    patch('collars/'+c.id, {status:'lost', seq:'', updatedAt:t, updatedBy:me()}); logChange(c.id,'collar',`Collar ${c.number}`,'marked lost',[{f:'Collar status',from:'in use',to:'lost'}]);
+    S.fCollar=''; S.fNoAuto=false; renderFit();
+    toast(`Collar ${c.number} marked lost`, ()=>{ const u=Date.now(); patch('collars/'+c.id, {status:'ok', seq:sq, updatedAt:u, updatedBy:me()}); S.fCollar=''; toast('Undone'); }); return; }
+  const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
+// ---- Order collars: line them up the way they are laid out at the chute ----
+function openOrder(){
+  S.fNoAuto=false;                                   // after lining up, the next collar is picked again
+  openSheet(`<div id="ord" style="display:flex;flex-direction:column;gap:12px">
+    <div class="sheet-h"><h2>Order collars</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="small muted">Line the collars up in the order they’ll go on. When fitting, the next one is ready to use.</div>
+    <div class="card">
+      <label class="f" for="ord-nums">Type the numbers in order</label>
+      <div class="inrow"><input id="ord-nums" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 101-120, 95, 88"><button class="btn primary" type="button" id="ord-add">Add</button></div>
+      <div id="ord-msg"></div>
+      <div class="f">Or scan them one by one<div>${camButton('ord-photo')}</div></div>
+      <div id="ord-scan"></div>
+    </div>
+    <div id="ord-line"></div>
+    <div id="ord-out"></div>
+    <div><button type="button" class="btn danger" id="ord-clear">Clear collar order</button></div>
+  </div>`);
+  const draw=()=>{
+    const L=collarLine(), w=wearers(), inL=new Set(L.map(c=>c.id));
+    $('#ord-line').innerHTML = L.length ? `<h3 class="ordhead">The line · ${L.length}</h3><div class="fit-list">${L.map((c,i)=>`<div class="ordrow" data-oc="${esc(c.id)}">
+        <div class="ordtop"><span class="ordn">${i+1}</span>${collarHtml({collar:c.number})}<button type="button" class="btn" data-o="out" aria-label="Take out of the line">✕</button></div>
+        <div class="ordbtns"><button type="button" class="btn" data-o="up" ${i===0?'disabled':''} aria-label="Move up">▲</button><button type="button" class="btn" data-o="down" ${i===L.length-1?'disabled':''} aria-label="Move down">▼</button><button type="button" class="btn" data-o="front" ${i===0?'disabled':''}>To front</button><button type="button" class="btn" data-o="back" ${i===L.length-1?'disabled':''}>To back</button></div>
+      </div>`).join('')}</div>` : '<div class="empty"><strong>No order yet</strong>Type the numbers or scan the collars as they’re laid out.</div>';
+    const out=collarList().filter(c=>!inL.has(c.id) && lineable(c,w));
+    $('#ord-out').innerHTML = out.length ? `<h3 class="ordhead">Not in the order · ${out.length}</h3><div class="fit-list">${out.map(c=>`<div class="ordrow" data-oc="${esc(c.id)}"><div class="ordtop">${collarHtml({collar:c.number})}<button type="button" class="btn" data-o="add">Add to line</button></div></div>`).join('')}</div>` : '';
+    $('#ord-clear').hidden=!L.length;
+  };
+  const append = nums => {           // add to the end in this order; returns problem lists
+    const L=collarLine(), w=wearers(), bad={none:[], fitted:[], lost:[]}; let n=0;
+    nums.forEach(num=>{ const c=collarFor(num);
+      if(!c){ bad.none.push(num); return; } if(c.status==='lost'){ bad.lost.push(c.number); return; } if(!lineable(c,w)){ bad.fitted.push(c.number); return; }
+      const i=L.findIndex(x=>x.id===c.id); if(i>=0) L.splice(i,1); L.push(c); n++; });
+    if(n) setLine(L);
+    return {n, bad};
+  };
+  $('#ord-add').addEventListener('click', ()=>{
+    const r=append(parseNums($('#ord-nums').value)), b=r.bad, probs=[];
+    if(b.none.length) probs.push(`Not in your collar list: ${b.none.slice(0,30).join(', ')}${b.none.length>30?' …':''}`);
+    if(b.fitted.length) probs.push(`Already fitted: ${b.fitted.join(', ')}`);
+    if(b.lost.length) probs.push(`Marked lost: ${b.lost.join(', ')}`);
+    $('#ord-msg').innerHTML = `<div class="notice ${probs.length?'warn':'ok'}">${plural(r.n,'collar')} added to the line.${probs.length?'<br>'+probs.map(esc).join('<br>'):''}</div>`;
+    if(r.n) $('#ord-nums').value=''; draw();
+  });
+  // Scanning: each collar read goes to the end of the line. Picking a different number from the same photo swaps it.
+  let fromPhoto=null;
+  $('#ord-photo').addEventListener('change', ()=>{ fromPhoto=null; });
+  wireScan('#ord-photo', '#ord-scan', n=>{
+    if(fromPhoto && ckey(fromPhoto.num)!==ckey(n)){ const L=collarLine().filter(c=>ckey(c.number)!==ckey(fromPhoto.num)); if(fromPhoto.was!=null){ const c=collarFor(fromPhoto.num); if(c) L.splice(Math.min(fromPhoto.was,L.length),0,c); } setLine(L); }
+    const before=collarLine().findIndex(c=>ckey(c.number)===ckey(n));
+    const r=append([n]); fromPhoto = r.n ? {num:n, was: before>=0?before:null} : null;
+    const pos=collarLine().findIndex(c=>ckey(c.number)===ckey(n));
+    $('#ord-msg').innerHTML = r.n ? `<div class="notice ok">Collar ${esc(n)} is ${ordinal(pos+1)} in line.</div>` : `<div class="notice warn">Collar ${esc(n)} can’t go in the line: ${r.bad.none.length?'it isn’t in your collar list':r.bad.lost.length?'it’s marked lost':'it’s already fitted'}.</div>`;
+    draw();
+  });
+  $('#ord').addEventListener('click', e=>{
+    const b=e.target.closest('[data-o]'); if(!b) return;
+    const id=b.closest('[data-oc]').dataset.oc, L=collarLine(), i=L.findIndex(c=>c.id===id), op=b.dataset.o;
+    if(op==='add'){ L.push(S.collars.get(id)); }
+    else if(i<0) return;
+    else if(op==='out') L.splice(i,1);
+    else { const [c]=L.splice(i,1); L.splice(op==='up'?i-1:op==='down'?i+1:op==='front'?0:L.length, 0, c); }
+    setLine(L); draw();
+  });
+  $('#ord-clear').addEventListener('click', e=>{ const b=e.currentTarget;
+    if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again to clear'; return; }
+    b.classList.remove('armed'); b.textContent='Clear collar order'; setLine([]); logChange('order','collar','Collar order cleared','cleared',[]); draw(); });
+  draw();
+}
+$('#ordBtn').addEventListener('click', openOrder);
 $('#fNotice').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
 $('#fCows').addEventListener('click', e=>{ const b=e.target.closest('[data-cow]'); if(b) pickCow(b.dataset.cow); });
 $('#fq').addEventListener('input', renderFit);
