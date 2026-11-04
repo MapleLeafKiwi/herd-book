@@ -37,19 +37,29 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.setInputFiles('#ord-photo', path.join(FIX,'collar-known.png'));
   await pg.waitForFunction(()=>/in line|can’t go|downloads|couldn|No number/.test(document.querySelector('#ord-msg').textContent+document.querySelector('#ord-scan').textContent), null, {timeout:120000});
   ok((await line()).join()==='103,102,101,7203418856', 'scanned collar goes to the end of the line: '+(await line()).join());
-  // move: To front, down, To back
-  await pg.click('#ord-line [data-oc="c-101"] [data-o="front"]');
-  ok((await line()).join()==='101,103,102,7203418856', 'To front');
-  await pg.click('#ord-line [data-oc="c-101"] [data-o="down"]');
-  ok((await line()).join()==='103,101,102,7203418856', 'Move down');
-  await pg.click('#ord-line [data-oc="c-7203418856"] [data-o="up"]'); await pg.click('#ord-line [data-oc="c-7203418856"] [data-o="back"]');
-  ok((await line()).join()==='103,101,102,7203418856', 'Move up then To back');
-  const bb = await pg.locator('#ord-line [data-o="front"]').nth(1).boundingBox(); ok(bb.height>=48, 'order buttons are glove-sized');
+  // drag by the grab handle
+  ok(await pg.locator('#ord-line [data-o="front"], #ord-line [data-o="up"]').count()===0, 'no arrow or To front/To back buttons, just grab handles');
+  const dragTo = async (fromId, toId) => {
+    const hb=await pg.locator(`#ord-line [data-oc="${fromId}"] [data-grip]`).boundingBox(), tb=await pg.locator(`#ord-line [data-oc="${toId}"]`).boundingBox();
+    const x=hb.x+hb.width/2, y=hb.y+hb.height/2, ty=tb.y+tb.height/2+(tb.y>hb.y?12:-12);
+    await pg.mouse.move(x,y); await pg.mouse.down(); await pg.mouse.move(x,ty,{steps:15}); await pg.mouse.up(); await wait(150); };
+  await dragTo('c-101','c-103');
+  ok((await line()).join()==='101,103,102,7203418856', 'drag a collar up to the front: '+(await line()).join());
+  await dragTo('c-101','c-103');
+  ok((await line()).join()==='103,101,102,7203418856', 'drag it back down one place: '+(await line()).join());
+  await dragTo('c-7203418856','c-101');
+  ok((await line()).join()==='103,7203418856,101,102', 'drag the last collar up two places: '+(await line()).join());
+  await pg.focus('#ord-line [data-oc="c-7203418856"] [data-grip]'); await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('ArrowDown'); await wait(100);
+  ok((await line()).join()==='103,101,102,7203418856', 'arrow keys on a handle move it too: '+(await line()).join());
+  const bb = await pg.locator('#ord-line [data-grip]').first().boundingBox(); ok(bb.height>=48 && bb.width>=48, 'grab handles are glove-sized');
   // add from Not in the order
   ok((await pg.textContent('#ord-out')).includes('Not in the order') && (await pg.textContent('#ord-out')).includes('104'), 'collars not in the order are listed underneath');
   await pg.click('#ord-out [data-oc="c-104"] [data-o="add"]');
   ok((await line()).join()==='103,101,102,7203418856,104', 'added from Not in the order to the end');
   await pg.screenshot({path:path.join(OUT,'order.png')}); await pg.click('#sheet .x');
+  await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
+  ok((await pg.textContent('#fitPair')).includes('Collar 101'), 'after reordering, the new front collar is the one picked');
+  await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
   // fitting several in a row
   ok((await pg.textContent('#fCollars')).includes('Next collar') && (await pg.textContent('#fitPair')).includes('Collar 103'), 'next collar in line is picked and labelled “Next collar”');
   await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=a1]'); await pg.click('#fitGo'); await hideToast();

@@ -1763,7 +1763,9 @@ function renderFit(){
   const qRaw=$('#fq').value.trim(), q=ckey(qRaw);
   // with a collar order, the next collar in line is picked ready to use
   const line=collarLine(), ordered=line.length>0;
-  if(ordered && !S.fCollar && !S.fNoAuto) S.fCollar=line[0].number;
+  // an auto-picked collar follows the front of the line; one the user tapped stays put
+  if(ordered && !S.fNoAuto && (!S.fCollar || S.fAuto)){ S.fCollar=line[0].number; S.fAuto=true; }
+  else if(!ordered && S.fAuto){ S.fCollar=''; S.fAuto=false; }
   $('#ordBtn').textContent = ordered ? `Collar order · ${line.length}` : 'Order collars';
   // collar side
   const cl=fitCollars();
@@ -1809,8 +1811,8 @@ function renderFit(){
 }
 const ordinal = n => n+(n%100>=11&&n%100<=13?'th':['th','st','nd','rd'][n%10]||'th');
 function pickCollar(num){
-  if(ckey(S.fCollar)===ckey(num)){ S.fCollar=''; S.fNoAuto=true; renderFit(); return; }
-  S.fCollar=num; S.fNoAuto=false;
+  if(ckey(S.fCollar)===ckey(num)){ S.fCollar=''; S.fNoAuto=true; S.fAuto=false; renderFit(); return; }
+  S.fCollar=num; S.fNoAuto=false; S.fAuto=false;
   // the animal it was last on, if it still needs one (not when collars are in an order)
   if(!S.fCow && !orderOn()){ const last=onHand().find(a=>!a.collarOn && ckey(a.collar)===ckey(num) && needsCollar(a)); if(last) S.fCow=last.id; }
   if(!S.fCow && S.fSide==='collar' && window.matchMedia('(max-width:699px)').matches) S.fSide='cow';
@@ -1929,11 +1931,12 @@ $('#fCollars').addEventListener('click', e=>{
     toast(`Collar ${c.number} marked lost`, ()=>{ const u=Date.now(); patch('collars/'+c.id, {status:'ok', seq:sq, updatedAt:u, updatedBy:me()}); S.fCollar=''; toast('Undone'); }); return; }
   const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
 // ---- Order collars: line them up the way they are laid out at the chute ----
+const GRIP='<svg viewBox="0 0 20 28" width="20" height="28" aria-hidden="true">'+[6,14].map(x=>[5,11,17,23].map(y=>`<circle cx="${x}" cy="${y}" r="2.3" fill="currentColor"/>`).join('')).join('')+'</svg>';
 function openOrder(){
   S.fNoAuto=false;                                   // after lining up, the next collar is picked again
   openSheet(`<div id="ord" style="display:flex;flex-direction:column;gap:12px">
     <div class="sheet-h"><h2>Order collars</h2><button class="x" type="button" aria-label="Close">×</button></div>
-    <div class="small muted">Line the collars up in the order they’ll go on. When fitting, the next one is ready to use.</div>
+    <div class="small muted">Line the collars up in the order they’ll go on. Drag a collar by its handle to move it. When fitting, the next one is ready to use.</div>
     <div class="card">
       <label class="f" for="ord-nums">Type the numbers in order</label>
       <div class="inrow"><input id="ord-nums" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 101-120, 95, 88"><button class="btn primary" type="button" id="ord-add">Add</button></div>
@@ -1948,8 +1951,7 @@ function openOrder(){
   const draw=()=>{
     const L=collarLine(), w=wearers(), inL=new Set(L.map(c=>c.id));
     $('#ord-line').innerHTML = L.length ? `<h3 class="ordhead">The line · ${L.length}</h3><div class="fit-list">${L.map((c,i)=>`<div class="ordrow" data-oc="${esc(c.id)}">
-        <div class="ordtop"><span class="ordn">${i+1}</span>${collarHtml({collar:c.number})}<button type="button" class="btn" data-o="out" aria-label="Take out of the line">✕</button></div>
-        <div class="ordbtns"><button type="button" class="btn" data-o="up" ${i===0?'disabled':''} aria-label="Move up">▲</button><button type="button" class="btn" data-o="down" ${i===L.length-1?'disabled':''} aria-label="Move down">▼</button><button type="button" class="btn" data-o="front" ${i===0?'disabled':''}>To front</button><button type="button" class="btn" data-o="back" ${i===L.length-1?'disabled':''}>To back</button></div>
+        <div class="ordtop"><button type="button" class="grip" data-grip aria-label="Drag to move collar ${esc(c.number)} up or down the line">${GRIP}</button><span class="ordn">${i+1}</span>${collarHtml({collar:c.number})}<button type="button" class="btn" data-o="out" aria-label="Take out of the line">✕</button></div>
       </div>`).join('')}</div>` : '<div class="empty"><strong>No order yet</strong>Type the numbers or scan the collars as they’re laid out.</div>';
     const out=collarList().filter(c=>!inL.has(c.id) && lineable(c,w));
     $('#ord-out').innerHTML = out.length ? `<h3 class="ordhead">Not in the order · ${out.length}</h3><div class="fit-list">${out.map(c=>`<div class="ordrow" data-oc="${esc(c.id)}"><div class="ordtop">${collarHtml({collar:c.number})}<button type="button" class="btn" data-o="add">Add to line</button></div></div>`).join('')}</div>` : '';
@@ -1988,9 +1990,34 @@ function openOrder(){
     if(op==='add'){ L.push(S.collars.get(id)); }
     else if(i<0) return;
     else if(op==='out') L.splice(i,1);
-    else { const [c]=L.splice(i,1); L.splice(op==='up'?i-1:op==='down'?i+1:op==='front'?0:L.length, 0, c); }
     setLine(L); draw();
   });
+  // Drag a collar up or down the line by its grab handle. The row jumps to its new place as the finger passes
+  // the middle of the next row; the sheet scrolls when dragging near its top or bottom edge.
+  let drag=null;
+  const list=()=>$('#ord-line .fit-list');
+  const mid=el=>{ const r=el.getBoundingClientRect(); return r.top+r.height/2; };
+  const renumber=()=>{ [...list().children].forEach((r,i)=>{ const n=r.querySelector('.ordn'); if(n) n.textContent=i+1; }); };
+  const place=()=>{ const r=drag.row, ul=list();
+    let p=r.previousElementSibling; while(p && drag.y<mid(p)){ ul.insertBefore(r,p); p=r.previousElementSibling; }
+    let n=r.nextElementSibling; while(n && drag.y>mid(n)){ ul.insertBefore(n,r); n=r.nextElementSibling; }
+    renumber(); };
+  const tick=()=>{ if(!drag) return; const sh=$('#sheet'), b=sh.getBoundingClientRect();
+    if(drag.y<b.top+70) sh.scrollTop-=12; else if(drag.y>b.bottom-70) sh.scrollTop+=12;
+    place(); requestAnimationFrame(tick); };
+  const finish=()=>{ if(!drag) return; const ids=[...list().children].map(r=>r.dataset.oc); drag.row.classList.remove('dragging'); drag=null;
+    const L=collarLine(); if(ids.join()!==L.map(c=>c.id).join()) setLine(ids.map(id=>S.collars.get(id)).filter(Boolean)); draw(); };
+  $('#ord').addEventListener('pointerdown', e=>{ const h=e.target.closest('[data-grip]'); if(!h) return;
+    e.preventDefault(); try{ h.setPointerCapture(e.pointerId); }catch{}
+    drag={row:h.closest('.ordrow'), pid:e.pointerId, y:e.clientY}; drag.row.classList.add('dragging'); requestAnimationFrame(tick); });
+  $('#ord').addEventListener('pointermove', e=>{ if(drag && e.pointerId===drag.pid){ drag.y=e.clientY; place(); } });
+  $('#ord').addEventListener('pointerup', e=>{ if(drag && e.pointerId===drag.pid) finish(); });
+  $('#ord').addEventListener('pointercancel', e=>{ if(drag && e.pointerId===drag.pid) finish(); });
+  // keyboard: arrow keys on a handle move that collar one place
+  $('#ord').addEventListener('keydown', e=>{ const h=e.target.closest('[data-grip]'); if(!h || (e.key!=='ArrowUp' && e.key!=='ArrowDown')) return;
+    e.preventDefault(); const id=h.closest('[data-oc]').dataset.oc, L=collarLine(), i=L.findIndex(c=>c.id===id), j=e.key==='ArrowUp'?i-1:i+1;
+    if(i<0 || j<0 || j>=L.length) return; const [c]=L.splice(i,1); L.splice(j,0,c); setLine(L); draw();
+    const g=$(`#ord-line [data-oc="${id}"] [data-grip]`); if(g) g.focus(); });
   $('#ord-clear').addEventListener('click', e=>{ const b=e.currentTarget;
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again to clear'; return; }
     b.classList.remove('armed'); b.textContent='Clear collar order'; setLine([]); logChange('order','collar','Collar order cleared','cleared',[]); draw(); });
