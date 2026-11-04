@@ -24,8 +24,8 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   ok(await pg.locator('nav a[data-tab=yard]').count()===0, 'Yard is gone from the menu');
   ok((await pg.textContent('#cChips')).replace(/\s+/g,' ').match(/All · 5.*Fitted · 1.*Not fitted · 3.*Lost · 1/), 'collar filters are All, Fitted, Not fitted, Lost: '+(await pg.textContent('#cChips')));
   ok(!/Unused|Yard/.test(await pg.textContent('main')), 'no “Unused” or “Yard” wording left');
-  ok((await pg.textContent('#collarList')).includes('Last on: Bar 9 A1 · North'), 'not-fitted collar shows the animal it was last on, with its group');
-  ok((await pg.textContent('#collarList')).includes('Bar 9 C3 · North'), 'fitted collar shows brand, tag and group');
+  ok((await pg.textContent('#collarList')).includes('Last on: Bar 9 A1North'), 'not-fitted collar shows the animal it was last on, with its group');
+  ok((await pg.textContent('#collarList')).includes('Bar 9 C3North'), 'fitted collar shows brand, tag and group');
   ok(await pg.isVisible('#fitBig'), 'big Fit collars button on the Collars tab');
   await pg.goto('http://localhost:8766/#yard'); await wait(300);
   ok(await pg.isVisible('#fitGo') && await pg.evaluate(()=>window.__herdbook.state.tab)==='fit', 'old #yard link opens the fitting screen');
@@ -112,7 +112,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.selectOption('#fu-group','South'); await pg.fill('#fu-note','black, white face'); await pg.click('#fuf button[type=submit]'); await wait(200);
   await pg.goto('http://localhost:8766/#collars'); await wait(200);
   ok((await pg.textContent('#cWarn')).includes('1 collar is on an unknown animal. Work out which one'), 'Collars tab notice: 1 collar is on an unknown animal');
-  ok((await pg.textContent('#collarList')).includes('On: unknown animal · South'), 'collar tile: On: unknown animal plus group');
+  ok((await pg.textContent('#collarList')).includes('On: unknown animalSouth'), 'collar tile: On: unknown animal plus group');
   ok(/Fitted · 5/.test(await pg.textContent('#cChips')), 'Fitted count includes the collar on the unknown animal: '+(await pg.textContent('#cChips')));
   // work it out: only the bull in South has no collar
   await pg.click('#cUnknown'); await wait(100);
