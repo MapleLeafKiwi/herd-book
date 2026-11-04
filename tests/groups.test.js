@@ -22,6 +22,13 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   const groupLines = () => pg.evaluate(()=>window.__herdbook.state.history.filter(h=>h.targetType==='group').length);
   const row = id => `#herdList [data-id="${id}"]`;
   await pg.goto('http://localhost:8767/#herd'); await wait(300); await pg.click('#st-skip');
+  // No group chip, group on the right of each row, blank when none
+  ok((await pg.textContent('#groupChips')).includes('No group · 2'), 'No group chip shows when some animals have no group');
+  await pg.click('#groupChips [data-g="__none"]');
+  ok(await pg.locator('#herdList [data-id]').count()===2 && await pg.locator(row('a5')).count()===1, 'No group chip filters to animals with no group');
+  await pg.click('#groupChips [data-g=""]');
+  ok((await pg.textContent(row('a1')+' .rgroup'))==='North' && !(await pg.textContent('#herdList')).includes('ago') && !(await pg.textContent('#herdList')).includes('No group'), 'row shows its group where the time was, and nothing when it has no group');
+  await pg.click('#addBtn'); ok(await pg.inputValue('#a-group')==='', 'new animal starts with No group'); await pg.click('#sheet .x');
   // select mode
   await pg.click('#selBtn');
   ok(await pg.isVisible('#selBar') && await pg.locator('#herdList .tick').count()===6, 'Select: every row gets a tick box and the bottom bar shows');
@@ -81,6 +88,10 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   ok(await G('a6')==='South', 'animal form: typing “ SOUTH” as a new group uses the existing South');
   await pg.click(row('a6')); ok(await pg.locator('#a-group option').count()>=3 && (await pg.inputValue('#a-group'))==='South', 'animal form Group is a pick list with No group and + New group');
   await pg.click('#sheet .x');
+  // when no animal has a group, the No group chip isn't needed
+  await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pg.click('#selBtn'); await pg.click('#groupChips [data-g=""]'); await pg.click('#selAll'); await pg.click('#selMove'); await pg.click('#mv .gpick[data-g=""]'); await pg.click('#mv-go'); await wait(200);
+  ok(!(await pg.textContent('#groupChips')).includes('No group'), 'no No group chip when none of the cattle are grouped');
   await pg.screenshot({path:path.join(OUT,'groups.png')});
   await browser.close(); srv.close();
 })().catch(e=>{ console.error(e); process.exit(1); });

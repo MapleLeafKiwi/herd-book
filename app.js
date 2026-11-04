@@ -280,10 +280,12 @@ window.addEventListener('hashchange', setTab);
 function renderHerd(){
   const pool = S.showSold ? animals() : onHand();
   const g = [...new Set(pool.map(a=>a.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-  if(S.group && !g.includes(S.group)) S.group='';
-  $('#groupChips').innerHTML = [['','All',pool.length], ...g.map(x=>[x,x,pool.filter(a=>a.group===x).length])]
+  // "No group" chip only when some animals have a group and some don't
+  const none=pool.filter(a=>!a.group).length, showNone = g.length>0 && none>0;
+  if(S.group && !(S.group==='__none' ? showNone : g.includes(S.group))) S.group='';
+  $('#groupChips').innerHTML = [['','All',pool.length], ...g.map(x=>[x,x,pool.filter(a=>a.group===x).length]), ...(showNone?[['__none','No group',none]]:[])]
     .map(([v,l,n])=>`<button type="button" class="chip" data-g="${esc(v)}" aria-pressed="${S.group===v}">${esc(l)} · ${n}</button>`).join('');
-  const inGroup = pool.filter(a=>!S.group || a.group===S.group);
+  const inGroup = pool.filter(a=>!S.group || (S.group==='__none' ? !a.group : a.group===S.group));
   const live = inGroup.filter(a=>!isSold(a)), sold = inGroup.filter(isSold);
   const fem = live.filter(a=>a.kind!=='bull'), withCollar = live.filter(a=>a.collar);
   const sum = (xs,k) => xs.reduce((t,a)=>t+(Number(a[k])||0),0);
@@ -294,7 +296,7 @@ function renderHerd(){
   const el = $('#herdList');
   if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from the Log tab.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Log › Phone setup.':''}</div>`; return; }
   renderSel();
-  if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
+  if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group==='__none'?'No group':S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
   S.shown = rows.map(a=>a.id);
   el.innerHTML = `<div class="list">${rows.map(a=>`
     <button type="button" class="row${isSold(a)?' sold':''}${S.sel?' selmode':''}" data-id="${esc(a.id)}" ${S.sel?`aria-pressed="${S.sel.ids.has(a.id)}"`:''}>
@@ -303,9 +305,9 @@ function renderHerd(){
         <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}${fittedIcon(a)}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
           ${isSold(a)?'<span class="pill sold">Sold</span>':''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
-        <span class="line2">${esc(a.group||'No group')}${a.notes?' · '+esc(a.notes):''}</span>
+        ${a.notes?`<span class="line2">${esc(a.notes)}</span>`:''}
       </span>
-      <span class="when">${esc(ago(a.updatedAt))}</span>
+      <span class="rgroup">${esc(a.group||'')}</span>
     </button>`).join('')}</div>`;
 }
 $('#q').addEventListener('input', renderHerd);
@@ -950,7 +952,7 @@ $('#scrim').addEventListener('click', e=>{ if(e.target.id==='scrim' || e.target.
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('#scrim').hidden) closeSheet(); });
 
 function openAnimal(id){
-  const a = id ? S.animals.get(id) : {kind:'cow', group:S.group||'', collarOn:false};
+  const a = id ? S.animals.get(id) : {kind:'cow', group:S.group==='__none'?'':(S.group||''), collarOn:false};
   if(id && !a) return;
   const xs = id ? (a.kind==='bull'?expsForBull(id):expsForCow(id)) : [];
   const mv = k => a[k]===''||a[k]==null ? '' : Number(a[k]).toFixed(2).replace(/\.00$/,'');
