@@ -91,6 +91,8 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   // new cow with no collar, fit by photo
   await pf.click('#addBtn'); await pf.fill('#a-b1','Lazy H'); await pf.fill('#a-group','Group 9'); await pf.fill('#a-vid','V77'); await pf.click('#af button[type=submit]'); await wait(300);
   ok((await pf.textContent('#herdList')).includes('V77'), 'herd list shows the visual tag');
+  ok(await pf.evaluate(()=>[...document.querySelectorAll('section[data-view]')].every(x=>x.firstElementChild.matches('details.help'))), 'every tab opens with a How this page works note');
+  await pf.click('section[data-view=herd] .help summary'); ok(await pf.isVisible('section[data-view=herd] .help ul'), 'tapping it shows the explanation');
   await pf.goto('http://localhost:8765/#yard'); await wait(300);
   await pf.fill('#yq','Lazy H');
   ok((await pf.textContent('#yardList')).includes('Tag V77'), 'yard card shows the visual tag for a cow with no collar'); await pf.click('[data-fitc]');

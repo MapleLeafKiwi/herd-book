@@ -196,6 +196,11 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .row.sold{opacity:.65}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:10px;z-index:30;font-weight:700;max-width:calc(100% - 32px)}
 .ro{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700}
+.help{font-size:15px}
+.help summary{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer;list-style:none;min-height:32px}
+.help summary::-webkit-details-marker{display:none}
+.help .i{color:var(--primary);flex:none}
+.help ul{margin:6px 0 0;padding:12px 14px 12px 30px;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:6px}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -224,6 +229,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#log">Log › Ranch &amp; phone setup</a>.</div>
 
   <section data-view="herd">
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Every animal on the ranch. Search by tag, brand, group or notes.</li><li>Tap a group button to see just that group. Tap an animal to see or change its details.</li><li><b>+ Add animal</b> for a new one. The green collar symbol means its collar is on.</li><li>Sold animals are hidden. Tick <b>Show sold animals</b> to see them.</li></ul></details>
     <div class="bar">
       <input id="q" class="search" type="search" placeholder="Search tag, brand, notes, group" autocomplete="off">
       <button class="btn primary" id="addBtn" type="button">+ Add animal</button>
@@ -236,6 +242,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="yard" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>For the chute when fitting collars.</li><li>Type the brand or collar number, or tap <b>Photo</b> to read the number off the collar.</li><li><b>Needs collar</b> shows the animals still to do. <b>All</b> shows everything.</li><li>Tap <b>Collar fitted ✓</b> once it’s on. <b>Fit collar</b> gives a collar to an animal that doesn’t have one yet.</li></ul></details>
     <input id="yq" class="big-search" type="search" placeholder="Brand or collar #" autocomplete="off" inputmode="text">
     <div class="bar">
       <select id="yGroup" style="flex:1 1 160px;width:auto"></select>
@@ -249,6 +256,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="collars" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Your list of collars and where each one is.</li><li><b>+ Add collars</b> to enter numbers. A range like 1-150 works.</li><li><b>Unused</b>: not given to an animal. <b>Not fitted</b>: given but not on yet. <b>Fitted</b>: on the animal.</li><li>Tap a collar to give it to an animal, add its eShepherd serial, or mark it lost.</li><li>Collars off for the year? <b>Start new season</b> marks them all as off.</li></ul></details>
     <div class="bar">
       <input id="cq" class="search" type="search" placeholder="Find collar #, brand or note" autocomplete="off">
       <button class="btn primary" id="cAddBtn" type="button">+ Add collars</button>
@@ -264,6 +272,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="breeding" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Which bull went in with which cows, and when calves are due.</li><li><b>+ Record breeding</b> when a bull goes in with cows, or for an AI date. Each cow gets a calving window.</li><li>Tap a cow to record a preg check or a calving. A calving adds the calf to the herd.</li><li>Under Bulls, tap <b>Pull bull</b> when he comes out.</li></ul></details>
     <div class="fab-row"><button class="btn primary" id="expBtn" type="button">+ Record breeding</button><button class="btn" id="gestBtn" type="button">Gestation length</button></div>
     <div class="small muted" id="gestNote"></div>
     <div id="breedList" style="display:flex;flex-direction:column;gap:10px"></div>
@@ -272,6 +281,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="health" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Vaccines and medicines given to the herd.</li><li><b>+ Record treatment</b> for one animal or a whole group.</li><li>Animals on withdrawal are listed at the top. Don’t sell or slaughter them before the date shown.</li><li>Boosters coming due show at the top too.</li></ul></details>
     <div class="bar">
       <input id="hq" class="search" type="search" placeholder="Search product, animal, batch" autocomplete="off">
       <button class="btn primary" id="treatBtn" type="button">+ Record treatment</button>
@@ -281,11 +291,13 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="money" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Profit, sales, purchases and expenses. Crew phones never see this page.</li><li>Pick a year or a group at the top to narrow it down.</li><li>Purchase and sale prices are entered on each animal (Herd › tap the animal).</li><li><b>+ Add expense</b> for feed, vet bills, fuel and so on.</li></ul></details>
     <div class="bar"><select id="mYear" style="flex:1 1 140px;width:auto"></select><select id="mGroup" style="flex:1 1 160px;width:auto"></select></div>
     <div id="moneyBody" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
 
   <section data-view="log" hidden>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
     <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">
       <div id="ranchLine"></div>
