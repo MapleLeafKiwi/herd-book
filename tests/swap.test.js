@@ -85,7 +85,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
 
   const A = await phone('Dave', {start:'Swap Ranch'}); const pa=A.page;
   const CODE = await pa.evaluate(()=>window.__herdbook.cfg.code);
-  for(const [c,b] of [['111','Bar T'],['222','Lazy J']]){ await pa.click('#addBtn'); await pa.fill('#a-collar',c); await pa.fill('#a-b1',b); await pa.fill('#a-group','North'); await pa.click('#af button[type=submit]'); }
+  for(const [c,b] of [['111','Bar T'],['222','Lazy J']]){ await pa.click('#addBtn'); await pa.fill('#a-collar',c); await pa.fill('#a-b1',b); await pa.selectOption('#a-group','__new'); await pa.fill('#a-gnew','North'); await pa.click('#af button[type=submit]'); }
   await wait(2200);
   const B = await phone('Sue', {code: CODE}); const pb=B.page; await wait(1200);
   ok(await pb.evaluate(()=>window.__herdbook.state.animals.size)===2, 'phone B has the herd');
@@ -95,7 +95,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   const edit = async (page, brand, fill) => { await page.goto('http://localhost:8765/#herd'); await page.click('.x').catch(()=>{}); await page.click(`.row[data-id]:has-text("${brand}")`); await fill(page); await page.click('#af button[type=submit]'); await wait(200); };
   await edit(pa,'Bar T', async p=>{ await p.fill('#a-notes','Limping'); await p.check('#a-on'); await p.fill('#a-pp','2450'); });
   await edit(pb,'Bar T', async p=>{ await p.fill('#a-notes','Fine now'); });
-  await edit(pb,'Lazy J', async p=>{ await p.fill('#a-group','South'); });
+  await edit(pb,'Lazy J', async p=>{ await p.selectOption('#a-group','__new'); await p.fill('#a-gnew','South'); });
   ok(await pa.isVisible('#swapBar'), 'swap option shows with no signal: '+(await pa.textContent('#swapBar')).trim());
   await pa.screenshot({path:path.join(OUT,'swapbar.png')});
   // A shows, B "scans" (frames decoded straight from A's real QR on screen for frame 1, the rest fed directly)

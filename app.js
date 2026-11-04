@@ -20,7 +20,7 @@ const parseMoney = v => { v=String(v||'').replace(/[$,\s]/g,''); if(v==='') retu
 const rid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 const canWrite = true;
 
-const S = { animals:new Map(), exposures:new Map(), collars:new Map(), treatments:new Map(), expenses:new Map(), preg:new Map(), mYear:'', mGroup:'', cFilter:'all', history:[], loaded:true, tab:'herd', group:'', fGroup:'', fSide:'collar', fCollar:'', fCow:'', showSold:false, lastSync:0 };
+const S = { animals:new Map(), exposures:new Map(), collars:new Map(), treatments:new Map(), expenses:new Map(), preg:new Map(), mYear:'', mGroup:'', cFilter:'all', history:[], loaded:true, tab:'herd', group:'', sel:null, fGroup:'', fSide:'collar', fCollar:'', fCow:'', showSold:false, lastSync:0 };
 
 // ---------- local storage ----------
 const LS = {
@@ -119,6 +119,9 @@ function baseOf(path, data){
   });
   return Object.keys(b).length ? b : null;
 }
+// Many edits at once (moving a group): each is a normal change, saved and redrawn once at the end.
+let bulkDepth=0;
+function bulk(fn){ bulkDepth++; try{ fn(); } finally { bulkDepth--; } if(!bulkDepth){ saveOutbox(); recompute(); clearTimeout(syncSoon); syncSoon=setTimeout(sync, 1500); } }
 function queue(op, path, data, base){
   data = data || null;
   if(op==='update'){
@@ -133,7 +136,7 @@ function queue(op, path, data, base){
   }
   outbox.push({op, path, data, base:base||null, t:Date.now()});
   return done();
-  function done(){ saveOutbox(); recompute(); clearTimeout(syncSoon); syncSoon=setTimeout(sync, 1500); return true; }
+  function done(){ if(bulkDepth) return true; saveOutbox(); recompute(); clearTimeout(syncSoon); syncSoon=setTimeout(sync, 1500); return true; }
 }
 const put = (path,data)=>queue('set',path,data);
 const patch = (path,data,base)=>queue('update',path,data, base || baseOf(path,data));
@@ -290,10 +293,12 @@ function renderHerd(){
   const rows = inGroup.filter(a=>matches(a,q)).sort(byTag);
   const el = $('#herdList');
   if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from the Log tab.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Log › Phone setup.':''}</div>`; return; }
-  if(!rows.length){ el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
+  renderSel();
+  if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
+  S.shown = rows.map(a=>a.id);
   el.innerHTML = `<div class="list">${rows.map(a=>`
-    <button type="button" class="row${isSold(a)?' sold':''}" data-id="${esc(a.id)}">
-      ${idBox(a)}
+    <button type="button" class="row${isSold(a)?' sold':''}${S.sel?' selmode':''}" data-id="${esc(a.id)}" ${S.sel?`aria-pressed="${S.sel.ids.has(a.id)}"`:''}>
+      ${S.sel?'<span class="tick" aria-hidden="true"></span>':''}${idBox(a)}
       <span class="main">
         <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}${fittedIcon(a)}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
@@ -306,7 +311,148 @@ function renderHerd(){
 $('#q').addEventListener('input', renderHerd);
 $('#showSold').addEventListener('change', e=>{ S.showSold=e.target.checked; renderHerd(); });
 $('#groupChips').addEventListener('click', e=>{ const b=e.target.closest('[data-g]'); if(!b) return; S.group=b.dataset.g; renderHerd(); });
-$('#herdList').addEventListener('click', e=>{ const r=e.target.closest('[data-id]'); if(r) openAnimal(r.dataset.id); });
+$('#herdList').addEventListener('click', e=>{ const r=e.target.closest('[data-id]'); if(!r) return;
+  if(S.sel){ const id=r.dataset.id; if(S.sel.ids.has(id)) S.sel.ids.delete(id); else S.sel.ids.add(id); r.setAttribute('aria-pressed', S.sel.ids.has(id)); renderSel(); return; }
+  openAnimal(r.dataset.id); });
+
+// ---------- groups: a group exists while animals are in it (the group field on each animal) ----------
+const gkey = g => String(g||'').toLowerCase().replace(/\s+/g,'');
+const tidyGroup = g => String(g||'').trim().replace(/\s+/g,' ');
+const allGroupNames = () => [...new Set(animals().map(a=>a.group).filter(Boolean))];
+// A typed name that matches an existing group, ignoring capitals and spaces, means that group.
+const sameGroup = name => { const k=gkey(name); return k ? (allGroupNames().find(g=>gkey(g)===k) || '') : ''; };
+const canonGroup = name => sameGroup(name) || tidyGroup(name);
+const gName = g => g || 'No group';
+const plural = (n, w) => `${n} ${w}${n===1?'':'s'}`;
+// Move animals to a group: one normal edit per animal, one change-log line. Returns {n, undo} or null if nothing changed.
+function moveAnimals(ids, target, text){
+  const xs=ids.map(id=>S.animals.get(id)).filter(a=>a && (a.group||'')!==target);
+  if(!xs.length) return null;
+  const prev=xs.map(a=>[a.id, a.group||'']), now=Date.now();
+  bulk(()=>{
+    xs.forEach(a=>patch('animals/'+a.id, {group:target, updatedAt:now, updatedBy:me()}));
+    logChange('groups','group', text || `${plural(xs.length,'animal')} moved to ${gName(target)}`, 'moved',
+      [{f:'Group', from:[...new Set(prev.map(p=>gName(p[1])))].join(', '), to:gName(target)}, {f:'Animals', from:'', to:xs.map(a=>label(a)).join(', ')}]);
+  });
+  const undo=()=>{ const t=Date.now(); bulk(()=>{ prev.forEach(([id,g])=>{ if(S.animals.get(id)) patch('animals/'+id, {group:g, updatedAt:t, updatedBy:me()}); });
+    logChange('groups','group', `Undone: ${plural(xs.length,'animal')} back in their old groups`, 'undone', []); }); toast('Undone'); };
+  return {n:xs.length, undo};
+}
+// ---- select mode on the Herd tab ----
+function enterSelect(target, pre){
+  S.sel={ids:new Set(pre||[]), target}; $('#selRange').value=''; $('#selRangeMsg').innerHTML='';
+  if(target!=null) S.group='';
+  if(location.hash!=='#herd' && location.hash!=='') location.hash='#herd'; else renderHerd();
+  window.scrollTo(0,0);
+}
+function leaveSelect(){ S.sel=null; renderHerd(); }
+function renderSel(){
+  const on=!!S.sel; $('#selTools').hidden=!on; $('#selBar').hidden=!on; $('section[data-view="herd"]').classList.toggle('selecting', on);
+  $('#selBtn').hidden=on;
+  if(!on) return;
+  const n=S.sel.ids.size; $('#selCount').textContent=`${n} selected`;
+  $('#selMove').textContent = S.sel.target!=null ? `Move to ${gName(S.sel.target)}` : 'Move to group';
+  $('#selMove').disabled = !n;
+}
+$('#selBtn').addEventListener('click', ()=>enterSelect(null));
+$('#selDone').addEventListener('click', leaveSelect);
+$('#selAll').addEventListener('click', ()=>{ (S.shown||[]).forEach(id=>S.sel.ids.add(id)); renderHerd(); });
+$('#selClear').addEventListener('click', ()=>{ S.sel.ids.clear(); $('#selRangeMsg').innerHTML=''; renderHerd(); });
+// Tick animals by collar number, ranges included (same parsing as Add collars).
+function tickByCollar(){
+  const nums=parseNums($('#selRange').value); if(!nums.length) return;
+  const miss=[]; let hit=0;
+  nums.forEach(n=>{ const a=onHand().find(x=>x.collar && ckey(x.collar)===ckey(n)); if(a){ S.sel.ids.add(a.id); hit++; } else miss.push(n); });
+  $('#selRangeMsg').innerHTML = `<div class="notice ${miss.length?'warn':'ok'}">${plural(hit,'animal')} ticked.${miss.length?` No animal on hand has collar ${esc(miss.slice(0,30).join(', '))}${miss.length>30?' …':''}.`:''}</div>`;
+  renderHerd();
+}
+$('#selRangeGo').addEventListener('click', tickByCollar);
+$('#selRange').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); tickByCollar(); } });
+function doMove(ids, target){
+  const r=moveAnimals(ids, target);
+  if(!r){ toast(`Those animals are already in ${gName(target)}`); return false; }
+  toast(`Moved ${plural(r.n,'animal')} to ${gName(target)}`, r.undo); return true;
+}
+$('#selMove').addEventListener('click', ()=>{
+  if(!S.sel || !S.sel.ids.size) return;
+  if(S.sel.target!=null){ doMove([...S.sel.ids], S.sel.target); leaveSelect(); return; }
+  openMoveSheet();
+});
+const NEWG_NOTE = '<div class="small muted">The group is saved once you move cattle into it.</div>';
+function groupCounts(){ const m=new Map(); onHand().forEach(a=>{ if(a.group) m.set(a.group,(m.get(a.group)||0)+1); }); return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true})); }
+function openMoveSheet(){
+  const ids=[...S.sel.ids], n=ids.length; let pick=null;
+  openSheet(`<div id="mv" style="display:flex;flex-direction:column;gap:12px">
+    <div class="sheet-h"><h2>Move ${plural(n,'animal')}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="fit-list">
+      ${groupCounts().map(([g,c])=>`<button type="button" class="gpick" data-g="${esc(g)}"><b>${esc(g)}</b><span class="n">${c} on hand</span></button>`).join('')}
+      <button type="button" class="gpick" data-g=""><b>No group</b></button>
+      <button type="button" class="gpick" data-new="1"><b>+ New group</b></button>
+    </div>
+    <div id="mv-newbox" hidden style="display:flex;flex-direction:column;gap:6px"><label class="f">New group name<input id="mv-new" type="text" autocomplete="off" placeholder="e.g. Heifers 2027"></label>${NEWG_NOTE}<div id="mv-same"></div></div>
+    <button type="button" class="btn primary fitgo" id="mv-go" disabled>Move</button>
+  </div>`);
+  const go=$('#mv-go'), newIn=$('#mv-new');
+  const target=()=> pick==='__new' ? canonGroup(newIn.value) : pick;
+  const upd=()=>{ const t=target(); const ok=pick!==null && !(pick==='__new' && !tidyGroup(newIn.value));
+    go.disabled=!ok; go.textContent = ok ? `Move ${plural(n,'animal')} to ${gName(t)}` : 'Move';
+    $('#mv-same').innerHTML = pick==='__new' && sameGroup(newIn.value) ? `<div class="notice ok">${esc(sameGroup(newIn.value))} is already a group. They’ll go there.</div>` : ''; };
+  $('#mv').addEventListener('click', e=>{ const b=e.target.closest('.gpick'); if(!b) return;
+    $('#mv').querySelectorAll('.gpick').forEach(x=>x.setAttribute('aria-pressed', x===b));
+    pick = b.dataset.new ? '__new' : b.dataset.g; $('#mv-newbox').hidden = pick!=='__new'; if(pick==='__new') newIn.focus(); upd(); });
+  newIn.addEventListener('input', upd);
+  go.addEventListener('click', ()=>{ const t=target(); closeSheet(); doMove(ids, t); leaveSelect(); });
+}
+// ---- manage groups ----
+function renameGroup(from, to){
+  const ids=animals().filter(a=>a.group===from).map(a=>a.id);          // sold ones too, so history stays consistent
+  const merge = gkey(from)!==gkey(to) && allGroupNames().includes(to);
+  const r=moveAnimals(ids, to, merge ? `Group ${from} merged into ${to}` : `Group ${from} renamed to ${to}`);
+  if(r) toast(merge?`${from} merged into ${to}`:`Renamed to ${to}`, r.undo);
+}
+function openGroups(){
+  const gs=groupCounts();
+  openSheet(`<div id="mg" style="display:flex;flex-direction:column;gap:12px">
+    <div class="sheet-h"><h2>Groups</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card">
+      <button type="button" class="btn primary" id="mg-newbtn">+ New group</button>
+      <div id="mg-newbox" hidden style="display:flex;flex-direction:column;gap:8px">
+        <label class="f">New group name<input id="mg-new" type="text" autocomplete="off" placeholder="e.g. Heifers 2027"></label>${NEWG_NOTE}
+        <div id="mg-msg"></div>
+        <button type="button" class="btn primary" id="mg-next">Next: pick the cattle</button>
+      </div>
+    </div>
+    <div class="card">${gs.length ? gs.map(([g,c])=>`<div class="grow" data-row="${esc(g)}">
+        <div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(g)}</b><span class="muted small">${plural(c,'animal')} on hand</span></div>
+        <div class="bar"><button type="button" class="btn" data-gadd="${esc(g)}">Add cattle</button><button type="button" class="btn" data-gren="${esc(g)}">Rename</button><button type="button" class="btn danger" data-gempty="${esc(g)}">Empty group</button></div>
+        <div data-renbox hidden style="display:flex;flex-direction:column;gap:8px"><label class="f">New name<input type="text" data-renin value="${esc(g)}"></label><div data-renmsg></div><button type="button" class="btn primary" data-rengo="${esc(g)}">Save name</button></div>
+      </div>`).join('') : '<div class="small muted">No groups yet. Tap “+ New group” to make one.</div>'}</div>
+  </div>`);
+  const root=$('#mg');
+  $('#mg-newbtn').addEventListener('click', ()=>{ $('#mg-newbox').hidden=false; $('#mg-newbtn').hidden=true; $('#mg-new').focus(); });
+  $('#mg-next').addEventListener('click', ()=>{
+    const name=tidyGroup($('#mg-new').value); if(!name){ $('#mg-msg').innerHTML='<div class="notice warn">Type a name for the group.</div>'; return; }
+    const ex=sameGroup(name); closeSheet();
+    if(ex){ enterSelect(ex, onHand().filter(a=>a.group===ex).map(a=>a.id)); toast(`${ex} is already a group. Tick cattle to add.`); }
+    else enterSelect(name, []);
+  });
+  root.addEventListener('click', e=>{
+    const add=e.target.closest('[data-gadd]'); if(add){ const g=add.dataset.gadd; closeSheet(); enterSelect(g, onHand().filter(a=>a.group===g).map(a=>a.id)); return; }
+    const ren=e.target.closest('[data-gren]'); if(ren){ const box=ren.closest('.grow').querySelector('[data-renbox]'); box.hidden=!box.hidden; if(!box.hidden) box.querySelector('input').focus(); return; }
+    const rg=e.target.closest('[data-rengo]'); if(rg){
+      const from=rg.dataset.rengo, row=rg.closest('.grow'), to=tidyGroup(row.querySelector('[data-renin]').value), msg=row.querySelector('[data-renmsg]');
+      if(!to){ msg.innerHTML='<div class="notice warn">Type the new name.</div>'; return; }
+      if(to===from){ closeSheet(); return; }
+      const ex=allGroupNames().find(g=>g!==from && gkey(g)===gkey(to));
+      if(ex && !rg.dataset.merge){ rg.dataset.merge='1'; rg.textContent=`Merge into ${ex}`; msg.innerHTML=`<div class="notice warn">${esc(ex)} already exists. Merge into ${esc(ex)}?</div>`; return; }
+      closeSheet(); renameGroup(from, ex||to); return; }
+    const em=e.target.closest('[data-gempty]'); if(em){ const g=em.dataset.gempty;
+      if(!em.classList.contains('armed')){ em.classList.add('armed'); em.textContent='Tap again to empty'; return; }
+      const r=moveAnimals(onHand().filter(a=>a.group===g).map(a=>a.id), '', `Group ${g} emptied`); closeSheet();
+      if(r) toast(`${g} emptied: ${plural(r.n,'animal')} now in No group`, r.undo); return; }
+  });
+}
+$('#mgBtn').addEventListener('click', openGroups);
 $('#addBtn').addEventListener('click', ()=>openAnimal(null));
 
 // ---------- bulls ----------
@@ -815,7 +961,9 @@ function openAnimal(id){
       <div class="grid2">
         <label class="f">Type<select id="a-kind">${Object.entries(KIND).map(([k,v])=>`<option value="${k}" ${a.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
         <div class="f" style="grid-column:1/-1"><label for="a-collar">Collar #</label><div class="inrow"><input id="a-collar" type="text" inputmode="numeric" list="collarlist" value="${esc(a.collar||'')}">${camButton('a-cphoto')}</div><datalist id="collarlist">${freeCollars().map(c=>`<option value="${esc(c.number)}">`).join('')}</datalist><div id="a-scan"></div></div>
-        <label class="f">Group<input id="a-group" type="text" list="grouplist" value="${esc(a.group||'')}"><datalist id="grouplist">${groups().map(g=>`<option value="${esc(g)}">`).join('')}</datalist></label>
+        <div class="f">${(()=>{ const gs=[...new Set(groups().concat(a.group?[a.group]:[]))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true}));
+          return `<label for="a-group">Group</label><select id="a-group"><option value="">No group</option>${gs.map(g=>`<option ${g===a.group?'selected':''}>${esc(g)}</option>`).join('')}<option value="__new">+ New group</option></select>
+          <input id="a-gnew" type="text" autocomplete="off" placeholder="New group name" hidden style="margin-top:6px">`; })()}</div>
         <label class="check"><input id="a-on" type="checkbox" ${a.collarOn?'checked':''}> Collar fitted</label>
         <label class="f">Brand<input id="a-b1" type="text" value="${esc(a.brand1||'')}"></label>
         <label class="f">Second brand (optional)<input id="a-b2" type="text" value="${esc(a.brand2||'')}"></label>
@@ -853,6 +1001,7 @@ function openAnimal(id){
   if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
     $('#a-sd').addEventListener('change', ()=>{ const w=id&&withdrawalUntil(id); if(w && $('#a-sd').value && $('#a-sd').value<=w) $('#a-warn').innerHTML=`<div class="notice warn">This animal is on withdrawal until ${esc(fmtDate(w))}.</div>`; }); }
   $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else if(b.dataset.goto==='fit'){ closeSheet(); S.fCow=id; S.fCollar=''; const a=S.animals.get(id); if(a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; } else openTreatment(null,[id]); }));
+  $('#a-group').addEventListener('change', e=>{ const nw=e.target.value==='__new'; $('#a-gnew').hidden=!nw; if(nw) $('#a-gnew').focus(); });
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
     $('#a-warn').innerHTML = d?`<div class="notice warn">Collar ${esc(v)} is already on ${esc(label(d))}${d.group?' in '+esc(d.group):''}.</div>`
@@ -877,7 +1026,7 @@ function openAnimal(id){
     e.preventDefault();
     const pp=fin()?parseMoney($('#a-pp').value):'', sp=fin()?parseMoney($('#a-sp').value):'';
     if(pp===null || sp===null){ $('#a-warn').innerHTML='<div class="notice warn">Prices should be numbers, like 2450 or 2450.50.</div>'; return; }
-    const v={ kind:$('#a-kind').value, collar:collarInput.value.trim(), group:$('#a-group').value.trim(), brand1:$('#a-b1').value.trim(), brand2:$('#a-b2').value.trim(), collarOn:$('#a-on').checked, notes:$('#a-notes').value.trim(),
+    const v={ kind:$('#a-kind').value, collar:collarInput.value.trim(), group:($('#a-group').value==='__new' ? canonGroup($('#a-gnew').value) : $('#a-group').value), brand1:$('#a-b1').value.trim(), brand2:$('#a-b2').value.trim(), collarOn:$('#a-on').checked, notes:$('#a-notes').value.trim(),
       vid:$('#a-vid').value.trim(), eid:$('#a-eid').value.trim(), breed:$('#a-breed').value.trim(), birthDate:$('#a-dob').value,
       purchasePrice:pp, purchaseDate:fin()?$('#a-pd').value:'', salePrice:sp, saleDate:fin()?$('#a-sd').value:'' };
     if(!fin()) FIN.forEach(k=>delete v[k]);

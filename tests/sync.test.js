@@ -91,7 +91,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
 
   // A adds an animal and collars
   await pa.click('#addBtn');
-  await pa.fill('#a-collar', '12'); await pa.fill('#a-b1', 'Bar T'); await pa.fill('#a-group', 'Home herd');
+  await pa.fill('#a-collar', '12'); await pa.fill('#a-b1', 'Bar T'); await pa.selectOption('#a-group','__new'); await pa.fill('#a-gnew','Home herd');
   await pa.fill('#a-pp', '2,450'); await pa.click('#af button[type=submit]');
   await pa.click('#addBtn'); await pa.selectOption('#a-kind','bull'); await pa.fill('#a-collar','B1'); await pa.fill('#a-b1','Lazy J'); await pa.click('#af button[type=submit]');
   await pa.goto('http://localhost:8765/?s='+encodeURIComponent(SYNC)+'&k='+CODE+'#collars');
@@ -143,8 +143,8 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await A.context.setOffline(true); await B.context.setOffline(true);
   await editCow(pa, p=>p.fill('#a-notes','Calved early'));
   await editCow(pb, p=>p.fill('#a-notes','Open, cull'));
-  await editCow(pa, p=>p.fill('#a-group','North'));
-  await editCow(pb, p=>p.fill('#a-group','North'));            // same value on both: not a clash
+  await editCow(pa, async p=>{ await p.selectOption('#a-group','__new'); await p.fill('#a-gnew','North'); });
+  await editCow(pb, async p=>{ await p.selectOption('#a-group','__new'); await p.fill('#a-gnew','North'); });            // same value on both: not a clash
   await A.context.setOffline(false); await pa.evaluate(()=>window.__herdbook.sync()); await wait(800);
   await B.context.setOffline(false); await pb.evaluate(()=>window.__herdbook.sync()); await wait(800);
   const cx = await pb.evaluate(()=>window.__herdbook.conflicts());
@@ -210,6 +210,36 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pe.goto('http://localhost:8765/#collars'); await wait(300); await pe.click('#cUnknown'); await pe.click('#uk [data-match] >> nth=0'); await wait(2200);
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   ok(await pa.evaluate(()=>{ const c=window.__herdbook.state.collars.get('c-778'); const a=[...window.__herdbook.state.animals.values()].find(x=>x.collar==='778'); return c && !c.unknownAt && a && a.collarOn===true && /Ear tag lost/.test(a.notes||''); }), 'crew matched the animal; full-access phone sees it fitted with the ear tag note');
+  // crew: make a group by moving cattle into it, then rename it
+  await pe.goto('http://localhost:8765/#herd'); await wait(300); await pe.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pe.click('#selBtn'); await pe.click('#herdList .row:has-text("Crew Cow")'); await pe.click('#selMove');
+  await pe.click('#mv [data-new]'); await pe.fill('#mv-new','Crew Pen'); await pe.click('#mv-go'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].some(a=>a.brand1==='Crew Cow' && a.group==='Crew Pen')), 'crew phone made a group by moving cattle; full-access phone sees it');
+  await pe.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pe.click('#mgBtn'); await pe.click('#mg [data-gren="Crew Pen"]'); await pe.fill('#mg [data-row="Crew Pen"] [data-renin]','Crew Paddock'); await pe.click('#mg [data-rengo="Crew Pen"]'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].some(a=>a.brand1==='Crew Cow' && a.group==='Crew Paddock')), 'crew phone renamed the group; full-access phone sees it');
+  // two phones move the same animal to different groups before either syncs: the second is asked
+  await pb.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  await A.context.setOffline(true); await B.context.setOffline(true);
+  for(const [pg, g] of [[pa,'East'],[pb,'West']]){
+    await pg.goto('http://localhost:8765/#herd'); await wait(300); await pg.click('#sheet .x').catch(()=>{}); await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+    await pg.click('#selBtn'); await pg.click('#herdList .row:has-text("Bar T")'); await pg.click('#selMove');
+    await pg.click('#mv [data-new]'); await pg.fill('#mv-new', g); await pg.click('#mv-go'); await wait(200);
+  }
+  await A.context.setOffline(false); await pa.evaluate(()=>window.__herdbook.sync()); await wait(800);
+  await B.context.setOffline(false); await pb.evaluate(()=>window.__herdbook.sync()); await wait(800);
+  const gx = await pb.evaluate(()=>window.__herdbook.conflicts());
+  ok(gx.length===1 && gx[0].field==='group' && gx[0].mine==='West' && gx[0].theirs==='East', 'same animal moved on two phones: second phone is asked which group: '+JSON.stringify(gx.map(c=>[c.field,c.mine,c.theirs])));
+  await pb.click('#cx [data-keep="theirs"]'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  const bt = async pg => pg.evaluate(()=>[...window.__herdbook.state.animals.values()].find(a=>a.collar==='12').group);
+  ok(await bt(pa)==='East' && await bt(pb)==='East', 'after choosing, both phones agree: East');
+  await pa.goto('http://localhost:8765/#herd'); await wait(300); await pa.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pa.click('#selBtn'); await pa.click('#herdList .row:has-text("Bar T")'); await pa.click('#selMove'); await pa.click('#mv [data-new]'); await pa.fill('#mv-new','North'); await pa.click('#mv-go'); await wait(2200);
+  await pb.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await bt(pa)==='North' && await bt(pb)==='North', 'moved back to North on both phones');
   doPost(JSON.stringify({code:CREW, since:0, ops:[{col:'animals', id:crewAnimals.find(a=>a.collar==='12').id, patch:{purchasePrice:1, notes:'Checked by farmhand'}}]}));
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   const cow3 = await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].find(a=>a.collar==='12'));
