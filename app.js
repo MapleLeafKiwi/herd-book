@@ -730,7 +730,7 @@ function switchTo(code, ranchName){
   // Records kept on a phone with no ranch go with it to the first ranch it joins.
   if(fromNone && LS.get(K.mirror,null)===null){ LS.set(K.mirror,mirror); LS.set(K.outbox,outbox); LS.set(K.conflicts,conflicts); }
   loadRanchData();
-  recompute(); renderSetup(); renderConflictBar();
+  recompute(); setTab(); renderSetup(); renderConflictBar();
   return '';
 }
 function openStart(force){
