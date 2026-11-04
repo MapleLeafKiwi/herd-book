@@ -393,7 +393,8 @@ function renderCollars(){
   const rows=states.filter(([c,s])=>(S.cFilter==='all'||s===S.cFilter) && (!q || ckey(c.number).includes(q) || ckey(c.note).includes(q) || (w.get(ckey(c.number))||[]).some(a=>matches(a,q))));
   if(!rows.length){ el.innerHTML=`<div class="empty"><strong>No collars here</strong>${S.cFilter==='not'&&!q?'Every collar in the list is fitted or lost.':'Nothing matches this search or filter.'}</div>`; return; }
   el.innerHTML=`<div class="cgrid">${rows.map(([c,s])=>{ const a=(w.get(ckey(c.number))||[])[0];
-    const who = onUnknown(c) ? 'On: unknown animal'+(c.unknownGroup?' · '+esc(c.unknownGroup):'') : a ? (s==='fitted' ? esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : s==='not' ? 'Last on: '+esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : '') : '';
+    const nm = x => esc(([x.brand1,x.vid].filter(Boolean).join(' ')||label(x)) + (x.group?' · '+x.group:''));
+    const who = onUnknown(c) ? 'On: unknown animal'+(c.unknownGroup?' · '+esc(c.unknownGroup):'') : a ? (s==='fitted' ? nm(a) : s==='not' ? 'Last on: '+nm(a) : '') : '';
     return `<button type="button" class="ctile ${s}" data-c="${esc(c.id)}"><span class="collar${String(c.number).length>5?' long':''}">${esc(c.number)}</span><span class="pill ${s==='fitted'?'ok':s==='lost'?'warn':''}">${STATE[s]}</span><span class="who">${who?who:(c.note?esc(c.note):'&nbsp;')}</span></button>`; }).join('')}</div>`;
 }
 $('#cq').addEventListener('input', renderCollars);

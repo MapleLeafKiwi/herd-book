@@ -24,7 +24,8 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   ok(await pg.locator('nav a[data-tab=yard]').count()===0, 'Yard is gone from the menu');
   ok((await pg.textContent('#cChips')).replace(/\s+/g,' ').match(/All · 5.*Fitted · 1.*Not fitted · 3.*Lost · 1/), 'collar filters are All, Fitted, Not fitted, Lost: '+(await pg.textContent('#cChips')));
   ok(!/Unused|Yard/.test(await pg.textContent('main')), 'no “Unused” or “Yard” wording left');
-  ok((await pg.textContent('#collarList')).includes('Last on: Bar 9 A1'), 'not-fitted collar shows the cow it was last on');
+  ok((await pg.textContent('#collarList')).includes('Last on: Bar 9 A1 · North'), 'not-fitted collar shows the animal it was last on, with its group');
+  ok((await pg.textContent('#collarList')).includes('Bar 9 C3 · North'), 'fitted collar shows brand, tag and group');
   ok(await pg.isVisible('#fitBig'), 'big Fit collars button on the Collars tab');
   await pg.goto('http://localhost:8766/#yard'); await wait(300);
   ok(await pg.isVisible('#fitGo') && await pg.evaluate(()=>window.__herdbook.state.tab)==='fit', 'old #yard link opens the fitting screen');
