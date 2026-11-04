@@ -194,11 +194,22 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   // crew phones fit collars too, and the fitting screen shows no money
   await pe.click('#addBtn'); await pe.fill('#a-b1','Crew Cow'); await pe.click('#af button[type=submit]'); await wait(300);
   await pe.goto('http://localhost:8765/#fit'); await wait(300);
-  await pe.click('#fitSwitch [data-side=cow]'); await pe.fill('#fcq','Crew Cow'); await pe.click('#fCows [data-cow]');
+  await pe.click('#fitSwitch [data-side=cow]'); await pe.fill('#fcq','Crew Cow'); await pe.click('#fCows [data-cow]:not([data-cow=unknown])');
   await pe.fill('#fq','777'); await pe.click('#fNotice [data-num="777"]'); await pe.click('#fitGo'); await wait(2200);
   ok(!(await pe.textContent('section[data-view=fit]')).includes('$') && await pe.isHidden('#navMoney'), 'crew fitting screen shows no money');
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   ok(await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].some(a=>a.brand1==='Crew Cow' && a.collar==='777' && a.collarOn===true)), 'collar fitted on a crew phone reaches the full-access phone');
+  // crew: fit a collar to an animal that lost its ear tag, then work out which one
+  await pe.click('#fitSwitch [data-side=collar]'); await pe.fill('#fq','778'); await pe.click('#fNotice [data-num="778"]');
+  await pe.click('#fitSwitch [data-side=cow]'); await pe.click('#fCows [data-cow=unknown]'); await pe.click('#fitGo');
+  await pe.fill('#fu-note','red, blaze face'); await pe.click('#fuf button[type=submit]'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(()=>{ const c=window.__herdbook.state.collars.get('c-778'); return c && c.unknownAt && c.unknownNote==='red, blaze face'; }), 'crew fit to an unknown animal reaches the full-access phone');
+  const colHead = ranchBooks()[0].tabs['Collars'].grid[0];
+  ok(['unknownAt','unknownGroup','unknownNote'].every(k=>colHead.includes(k)), 'sheet added the new collar columns by itself: '+colHead.join(','));
+  await pe.goto('http://localhost:8765/#collars'); await wait(300); await pe.click('#cUnknown'); await pe.click('#uk [data-match] >> nth=0'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(()=>{ const c=window.__herdbook.state.collars.get('c-778'); const a=[...window.__herdbook.state.animals.values()].find(x=>x.collar==='778'); return c && !c.unknownAt && a && a.collarOn===true && /Ear tag lost/.test(a.notes||''); }), 'crew matched the animal; full-access phone sees it fitted with the ear tag note');
   doPost(JSON.stringify({code:CREW, since:0, ops:[{col:'animals', id:crewAnimals.find(a=>a.collar==='12').id, patch:{purchasePrice:1, notes:'Checked by farmhand'}}]}));
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   const cow3 = await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].find(a=>a.collar==='12'));

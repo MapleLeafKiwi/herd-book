@@ -95,7 +95,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   ok(await pf.evaluate(()=>[...document.querySelectorAll('section[data-view]')].every(x=>x.querySelector(':scope > details.help'))), 'every tab has a How this page works note');
   await pf.goto('http://localhost:8765/#fit'); await wait(300);
   await pf.click('#fitSwitch [data-side=cow]'); await pf.fill('#fcq','Lazy H');
-  ok((await pf.textContent('#fCows')).includes('V77'), 'fitting screen shows the visual tag for a cow with no collar'); await pf.click('#fCows [data-cow]');
+  ok((await pf.textContent('#fCows')).includes('V77'), 'fitting screen shows the visual tag for a cow with no collar'); await pf.click('#fCows [data-cow]:not([data-cow=unknown])');
   const t0=Date.now();
   await pf.setInputFiles('#fq-photo',path.join(FIX,'collar-new.jpg'));
   await pf.waitForFunction(()=>{ const t=document.querySelector('#fScan').textContent; return document.querySelector('#fScan [data-pick]') || /No number|couldn|downloads/.test(t); }, null, {timeout:120000});

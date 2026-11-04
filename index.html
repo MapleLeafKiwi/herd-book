@@ -224,7 +224,12 @@ section[data-view="fit"]{padding-bottom:110px}
 @media (max-width:699px){.fit-grid{grid-template-columns:1fr}
   section[data-fside="collar"] .fit-col[data-side="cow"], section[data-fside="cow"] .fit-col[data-side="collar"]{display:none}}
 @media (min-width:700px){.fit-switch{display:none}}
+/* keep messages clear of the Fit bar and of pop-up buttons */
+body:has(section[data-view="fit"]:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+body:has(#scrim:not([hidden])) .toast{top:calc(12px + env(safe-area-inset-top,0px));bottom:auto}
 .toast .undo{margin-left:12px;border:0;background:none;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;min-height:40px;padding:0 6px}
+.unk-notice{display:block;width:100%;text-align:left;border:0;font:inherit;font-weight:700;cursor:pointer;min-height:52px}
+.fpick.unk{border-style:dashed}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -266,9 +271,9 @@ section[data-view="fit"]{padding-bottom:110px}
 
   <section data-view="fit" data-fside="collar" hidden>
     <div class="fit-top"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2></div>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Pick a collar and a cow, in either order, then tap <b>Fit</b>.</li><li>Pick a cow and her collar from last season is picked for you. Pick a collar and the cow it was last on is picked for you.</li><li>Type the collar number or tap <b>Photo</b> to read it off the collar. It jumps to the top of the list.</li><li>Made a mistake? Tap <b>Undo</b> on the message that pops up.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Pick a collar and an animal, in either order, then tap <b>Fit</b>.</li><li>Pick an animal and its collar from last season is picked for you. Pick a collar and the animal it was last on is picked for you.</li><li>Lost ear tag? Pick <b>Animal not known (lost tag)</b>. Work out which one later on the Collars tab.</li><li>Type the collar number or tap <b>Photo</b> to read it off the collar. It jumps to the top of the list.</li><li>Made a mistake? Tap <b>Undo</b> on the message that pops up.</li></ul></details>
     <div class="fit-sticky">
-      <div class="seg fit-switch" id="fitSwitch"><button type="button" data-side="collar" aria-pressed="true">Collars</button><button type="button" data-side="cow" aria-pressed="false">Cows</button></div>
+      <div class="seg fit-switch" id="fitSwitch"><button type="button" data-side="collar" aria-pressed="true">Collars</button><button type="button" data-side="cow" aria-pressed="false">Animals</button></div>
       <div class="fit-grid">
         <div class="fit-col" data-side="collar">
           <div class="inrow"><input id="fq" class="big-search" type="search" placeholder="Collar #" autocomplete="off" inputmode="numeric"></div>
@@ -284,11 +289,11 @@ section[data-view="fit"]{padding-bottom:110px}
       <div class="fit-col" data-side="collar"><div id="fCollars" class="fit-list"></div></div>
       <div class="fit-col" data-side="cow"><div id="fCows" class="fit-list"></div></div>
     </div>
-    <div class="fitbar" id="fitBar"><div class="wrap fitbar-in"><div id="fitPair" class="fitpair">Pick a collar and a cow</div><button type="button" class="btn primary fitgo" id="fitGo" disabled>Fit</button></div></div>
+    <div class="fitbar" id="fitBar"><div class="wrap fitbar-in"><div id="fitPair" class="fitpair">Pick a collar and an animal</div><button type="button" class="btn primary fitgo" id="fitGo" disabled>Fit</button></div></div>
   </section>
 
   <section data-view="collars" hidden>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Your list of collars and where each one is.</li><li><b>Fit collars</b> to put collars on cattle at the chute.</li><li><b>Fitted</b>: on a cow now. <b>Not fitted</b>: ready to use. <b>Lost</b>: missing or out of use.</li><li>Tap a collar to mark it lost or found, take it off its cow, or add its eShepherd serial.</li><li><b>+ Add collars</b> to enter numbers. A range like 1-150 works.</li><li>Collars off for the year? <b>Start new season</b> marks them all as not fitted.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Your list of collars and where each one is.</li><li><b>Fit collars</b> to put collars on cattle at the chute.</li><li><b>Fitted</b>: on an animal now. <b>Not fitted</b>: ready to use. <b>Lost</b>: missing or out of use.</li><li>Tap a collar to mark it lost or found, take it off its animal, or add its eShepherd serial.</li><li><b>+ Add collars</b> to enter numbers. A range like 1-150 works.</li><li>Collars off for the year? <b>Start new season</b> marks them all as not fitted.</li></ul></details>
     <a class="btn tag fitbig" href="#fit" id="fitBig">Fit collars</a>
     <div class="bar">
       <input id="cq" class="search" type="search" placeholder="Find collar #, brand or note" autocomplete="off">
@@ -299,7 +304,7 @@ section[data-view="fit"]{padding-bottom:110px}
     <div id="collarList"></div>
     <div class="card" id="cSeason">
       <b>Collars off for the year?</b>
-      <div class="small muted">Start a new season to mark every fitted collar as not fitted. Each cow remembers her collar, so when you fit collars again she’s matched with the same one. Fitted right now: <b id="seasonCount">0</b>.</div>
+      <div class="small muted">Start a new season to mark every fitted collar as not fitted. Each animal remembers its collar, so when you fit collars again it’s matched with the same one. Collars on unknown animals are cleared too. Fitted right now: <b id="seasonCount">0</b>.</div>
       <div class="fab-row"><button class="btn danger" id="seasonBtn" type="button">Start new season</button><button class="btn" id="cExport" type="button">Download collar list (CSV)</button></div>
     </div>
   </section>

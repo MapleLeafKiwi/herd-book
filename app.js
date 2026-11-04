@@ -340,13 +340,18 @@ const cid = n => 'c-'+ckey(n).replace(/[^a-z0-9_\-.~]/g,'_').slice(0,190);
 const collarFor = n => S.collars.get(cid(n));
 const collarList = () => [...S.collars.values()].sort((a,b)=>String(a.number).localeCompare(String(b.number),undefined,{numeric:true}));
 function wearers(){ const m=new Map(); onHand().forEach(a=>{ if(a.collar){ const k=ckey(a.collar); if(!m.has(k)) m.set(k,[]); m.get(k).push(a); } }); return m; }
+// A collar fitted to an animal we can't identify yet (lost ear tag) keeps the details on the collar itself:
+// unknownAt (date fitted), unknownGroup, unknownNote. No placeholder animal, so herd counts and exports are untouched.
+const onUnknown = c => !!(c && c.status!=='lost' && c.unknownAt);
+const unknownCollars = () => collarList().filter(onUnknown);
 function collarState(c, w){
   if(c.status==='lost') return 'lost';
+  if(c.unknownAt) return 'fitted';
   const on=w.get(ckey(c.number))||[];
   return on.some(a=>a.collarOn) ? 'fitted' : 'not';
 }
 // Collars no animal has and that aren't lost: suggested when typing a collar on the animal form.
-const freeCollars = () => { const w=wearers(); return collarList().filter(c=>c.status!=='lost' && !w.has(ckey(c.number))); };
+const freeCollars = () => { const w=wearers(); return collarList().filter(c=>c.status!=='lost' && !c.unknownAt && !w.has(ckey(c.number))); };
 function parseNums(t){
   const out=[];
   String(t).replace(/\s*-\s*/g,'-').split(/[\s,;]+/).forEach(tok=>{
@@ -376,23 +381,26 @@ function renderCollars(){
   const orphans=[...w.keys()].filter(k=>!known.has(k)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
   const dups=[...w.values()].filter(a=>a.length>1);
   let warn='';
+  const unk=unknownCollars().length;
+  if(unk) warn+=`<button type="button" class="notice warn unk-notice" id="cUnknown">${unk} collar${unk>1?'s are':' is'} on an unknown animal. Work out which one ›</button>`;
   if(dups.length) warn+=`<div class="notice warn">${dups.map(a=>`Collar ${esc(a[0].collar)} is on ${a.length} animals: ${a.map(x=>esc(x.brand1||label(x))).join(', ')}`).join('<br>')}</div>`;
   if(orphans.length) warn+=`<div class="card"><div><b>${orphans.length} collar${orphans.length>1?'s are':' is'} on cattle but not in this list:</b> ${orphans.slice(0,40).map(k=>esc(w.get(k)[0].collar)).join(', ')}${orphans.length>40?' …':''}</div><div><button type="button" class="btn" id="cAddOrphans">Add ${orphans.length>1?'them':'it'} to the list</button></div></div>`;
   $('#cWarn').innerHTML=warn;
-  $('#seasonCount').textContent=onHand().filter(a=>a.collar&&a.collarOn).length;
-  const need=onHand().filter(needsCollar).length; $('#fitBig').textContent = need ? `Fit collars · ${need} cow${need>1?'s':''} need one` : 'Fit collars';
+  $('#seasonCount').textContent=onHand().filter(a=>a.collar&&a.collarOn).length + unknownCollars().length;
+  const need=onHand().filter(needsCollar).length; $('#fitBig').textContent = need ? `Fit collars · ${need} animal${need>1?'s':''} need one` : 'Fit collars';
   if(!list.length){ el.innerHTML=`<div class="empty"><strong>No collars listed yet</strong>Tap “Add collars” and enter your numbers as a range, like 1-150.${orphans.length?' Or add the collars already on your cattle above.':''}</div>`; return; }
   const q=ckey($('#cq').value);
   const rows=states.filter(([c,s])=>(S.cFilter==='all'||s===S.cFilter) && (!q || ckey(c.number).includes(q) || ckey(c.note).includes(q) || (w.get(ckey(c.number))||[]).some(a=>matches(a,q))));
   if(!rows.length){ el.innerHTML=`<div class="empty"><strong>No collars here</strong>${S.cFilter==='not'&&!q?'Every collar in the list is fitted or lost.':'Nothing matches this search or filter.'}</div>`; return; }
   el.innerHTML=`<div class="cgrid">${rows.map(([c,s])=>{ const a=(w.get(ckey(c.number))||[])[0];
-    const who = a ? (s==='fitted' ? esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : s==='not' ? 'Last on: '+esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : '') : '';
+    const who = onUnknown(c) ? 'On: unknown animal'+(c.unknownGroup?' · '+esc(c.unknownGroup):'') : a ? (s==='fitted' ? esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : s==='not' ? 'Last on: '+esc([a.brand1,a.vid].filter(Boolean).join(' ')||label(a)) : '') : '';
     return `<button type="button" class="ctile ${s}" data-c="${esc(c.id)}"><span class="collar${String(c.number).length>5?' long':''}">${esc(c.number)}</span><span class="pill ${s==='fitted'?'ok':s==='lost'?'warn':''}">${STATE[s]}</span><span class="who">${who?who:(c.note?esc(c.note):'&nbsp;')}</span></button>`; }).join('')}</div>`;
 }
 $('#cq').addEventListener('input', renderCollars);
 $('#cChips').addEventListener('click', e=>{ const b=e.target.closest('[data-cf]'); if(!b) return; S.cFilter=b.dataset.cf; renderCollars(); });
 $('#collarList').addEventListener('click', e=>{ const t=e.target.closest('[data-c]'); if(t) openCollar(t.dataset.c); });
-$('#cWarn').addEventListener('click', e=>{ if(!e.target.closest('#cAddOrphans')) return;
+$('#cWarn').addEventListener('click', e=>{ if(e.target.closest('#cUnknown')) return openUnknown(0);
+  if(!e.target.closest('#cAddOrphans')) return;
   const w=wearers(); const known=new Set(collarList().map(c=>ckey(c.number)));
   const n=addCollars([...w.keys()].filter(k=>!known.has(k)).map(k=>w.get(k)[0].collar)); toast(`Added ${n} collars to the list`); });
 $('#cAddBtn').addEventListener('click', openAddCollars);
@@ -400,13 +408,14 @@ $('#seasonBtn').addEventListener('click', e=>{
   const b=e.currentTarget;
   if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again to confirm'; return; }
   b.classList.remove('armed'); b.textContent='Start new season';
-  const xs=onHand().filter(a=>a.collar&&a.collarOn);
-  if(!xs.length){ toast('No collars are marked fitted'); return; }
-  const now=Date.now();
+  const xs=onHand().filter(a=>a.collar&&a.collarOn), us=unknownCollars();
+  if(!xs.length && !us.length){ toast('No collars are marked fitted'); return; }
+  const now=Date.now(), n=xs.length+us.length;
   xs.forEach(a=>outbox.push({op:'update', path:'animals/'+a.id, data:{collarOn:false, updatedAt:now, updatedBy:me()}, t:now}));
+  us.forEach(c=>outbox.push({op:'update', path:'collars/'+c.id, data:{unknownAt:'', unknownGroup:'', unknownNote:'', updatedAt:now, updatedBy:me()}, t:now}));
   saveOutbox();
-  logChange('season','season',`New season: ${xs.length} collars marked not fitted`,'reset',[]);
-  toast(`${xs.length} collars marked not fitted`);
+  logChange('season','season',`New season: ${n} collars marked not fitted`,'reset',[]);
+  toast(`${n} collars marked not fitted`);
 });
 $('#cExport').addEventListener('click', ()=>{
   const w=wearers(); const rows=[['collar','status','on_animal','brand1','brand2','group','fitted','note']];
@@ -470,11 +479,14 @@ function openCollar(id){
   openSheet(`<div id="cs" style="display:flex;flex-direction:column;gap:14px">
     <div class="sheet-h"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="collar xl${String(c.number).length>5?' long':''}">${esc(c.number)}</span><span class="pill ${s==='fitted'?'ok':s==='lost'?'warn':''}">${STATE[s]}</span></div><button class="x" type="button" aria-label="Close">×</button></div>
     <div class="card">
-      ${s==='fitted' ? `<div><b>On</b> ${who(a)}</div>
+      ${onUnknown(c) ? `<div><b>On: unknown animal</b>${c.unknownGroup?` <span class="muted small">${esc(c.unknownGroup)}</span>`:''}</div>
+          ${c.unknownNote?`<div>${esc(c.unknownNote)}</div>`:''}<div class="small muted">Fitted ${esc(fmtDate(c.unknownAt))}</div>
+          <div class="bar"><button type="button" class="btn tag" data-unk="1">Work out which one</button><button type="button" class="btn" data-offu="1">Take off</button></div>`
+        : s==='fitted' ? `<div><b>On</b> ${who(a)}</div>
           ${on.length>1?`<div class="notice warn">Also on ${on.slice(1).map(x=>esc(label(x))).join(', ')}.</div>`:''}
-          <div class="bar"><button type="button" class="btn" data-off="${esc(a.id)}">Take off this cow</button><button type="button" class="btn" data-open="${esc(a.id)}">Cow details</button></div>`
+          <div class="bar"><button type="button" class="btn" data-off="${esc(a.id)}">Take off this animal</button><button type="button" class="btn" data-open="${esc(a.id)}">Animal details</button></div>`
         : s==='lost' ? `<div class="muted">Marked lost or out of use. It won’t show when fitting collars.</div>`
-        : `<div>${a?`<b>Last on</b> ${who(a)}`:'<span class="muted">Not on any cow.</span>'}</div>
+        : `<div>${a?`<b>Last on</b> ${who(a)}`:'<span class="muted">Not on any animal.</span>'}</div>
           <div class="bar"><button type="button" class="btn tag" data-fitc="1">Fit this collar</button></div>`}
       <div class="bar"><button type="button" class="btn ${s==='lost'?'primary':'danger'}" data-lost="1">${s==='lost'?'Found it':'Mark lost'}</button></div>
     </div>
@@ -490,14 +502,16 @@ function openCollar(id){
   const root=$('#cs');
   root.addEventListener('click', e=>{
     const o=e.target.closest('[data-open]'); if(o) return openAnimal(o.dataset.open);
-    // Taking a collar off keeps the number on the cow, so she's matched with it again next time.
+    if(e.target.closest('[data-unk]')){ return openUnknown(Math.max(0, unknownCollars().findIndex(x=>x.id===id))); }
+    if(e.target.closest('[data-offu]')){ patch('collars/'+id, {unknownAt:'', unknownGroup:'', unknownNote:'', updatedAt:Date.now(), updatedBy:me()}); logChange(id,'collar',`Collar ${c.number}`,'taken off unknown animal',[]); toast(`Collar ${c.number} taken off`); return openCollar(id); }
+    // Taking a collar off keeps the number on the animal, so it's matched with the same collar next time.
     const off=e.target.closest('[data-off]'); if(off){ const x=S.animals.get(off.dataset.off);
       patch('animals/'+x.id, {collarOn:false, updatedAt:Date.now(), updatedBy:me()}); logChange(x.id,'animal',label(x),'collar taken off',[{f:'collarOn',from:true,to:false}]);
       toast(`Collar ${c.number} taken off`); return openCollar(id); }
-    if(e.target.closest('[data-fitc]')){ closeSheet(); S.fCollar=c.number; S.fCow=''; const last=on[0]; if(last && needsCollar(last)) S.fCow=last.id; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; return; }
-    // A lost collar comes off any cow that had it, so she shows as needing one.
+    if(e.target.closest('[data-fitc]')){ if(onUnknown(c)) return; closeSheet(); S.fCollar=c.number; S.fCow=''; const last=on[0]; if(last && needsCollar(last)) S.fCow=last.id; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; return; }
+    // A lost collar comes off any animal that had it, so that animal shows as needing one.
     if(e.target.closest('[data-lost]')){ const lost=c.status!=='lost', now=Date.now();
-      patch('collars/'+id, {status:lost?'lost':'ok', updatedAt:now, updatedBy:me()});
+      patch('collars/'+id, Object.assign({status:lost?'lost':'ok', updatedAt:now, updatedBy:me()}, lost?{unknownAt:'', unknownGroup:'', unknownNote:''}:{}));
       if(lost) on.forEach(x=>{ patch('animals/'+x.id, {collar:'', collarOn:false, updatedAt:now, updatedBy:me()}); logChange(x.id,'animal',label(x),'collar lost',[{f:'collar',from:x.collar,to:''}]); });
       logChange(id,'collar',`Collar ${c.number}`,'edited',[{f:'Collar status',from:lost?'in use':'lost',to:lost?'lost':'in use'}]);
       toast(lost?`Collar ${c.number} marked lost`:`Collar ${c.number} back in use`); return openCollar(id); }
@@ -1549,11 +1563,11 @@ function wireScan(inputSel, boxSel, onPick){
 }
 function camButton(id){ return `<label class="btn cambtn" for="${id}" title="Take a photo of the collar number">${CAM}<span>Photo</span></label><input id="${id}" type="file" accept="image/*" capture="environment" hidden>`; }
 
-// ---------- fit collars: pick a collar and a cow (either order), then Fit ----------
-// Cows that need a collar on: on hand, no fitted collar. Calves only once they've been given a collar number.
+// ---------- fit collars: pick a collar and an animal (either order), then Fit ----------
+// Animals that need a collar on: on hand, no fitted collar. Calves only once they've been given a collar number.
 const needsCollar = a => !isSold(a) && (a.collar ? !a.collarOn : a.kind!=='calf');
-// A collar can be fitted when it isn't lost and isn't on another cow right now.
-function fitFree(num, forId){ const c=collarFor(num); if(c && c.status==='lost') return false; return !onHand().some(o=>o.id!==forId && o.collarOn && ckey(o.collar)===ckey(num)); }
+// A collar can be fitted when it isn't lost and isn't on another animal (known or not) right now.
+function fitFree(num, forId){ const c=collarFor(num); if(c && (c.status==='lost' || c.unknownAt)) return false; return !onHand().some(o=>o.id!==forId && o.collarOn && ckey(o.collar)===ckey(num)); }
 const cowName = a => [a.brand1, a.vid].filter(Boolean).join(' ') || label(a);
 function fitCollars(){
   const w=wearers(), q=ckey($('#fq').value);
@@ -1571,7 +1585,7 @@ function renderFit(){
   document.querySelectorAll('#fitSwitch button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.side===S.fSide));
   const hh=document.querySelector('header'); if(hh) document.documentElement.style.setProperty('--headh', hh.offsetHeight+'px');
   // a picked cow or collar that is no longer available drops out
-  if(S.fCow){ const a=S.animals.get(S.fCow); if(!a || !needsCollar(a)) S.fCow=''; }
+  if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || !needsCollar(a)) S.fCow=''; }
   if(S.fCollar){ const c=collarFor(S.fCollar); if(c && c.status==='lost') S.fCollar=''; }
   const qRaw=$('#fq').value.trim(), q=ckey(qRaw);
   // collar side
@@ -1580,8 +1594,9 @@ function renderFit(){
   if(qRaw && /\d/.test(qRaw) && !cl.some(x=>ckey(x.num)===q)){
     const c=collarFor(qRaw), d=onHand().find(o=>o.collarOn && ckey(o.collar)===q);
     if(c && c.status==='lost') notice=`<div class="notice warn">Collar ${esc(qRaw)} is marked lost. Mark it found in the collar list to fit it.</div>`;
+    else if(onUnknown(c)) notice=`<div class="notice warn">Collar ${esc(qRaw)} is already on an unknown animal${c.unknownGroup?' in '+esc(c.unknownGroup):''}. Work out which one on the Collars tab.</div>`;
     else if(d) notice=`<div class="notice warn">Collar ${esc(qRaw)} is already fitted on ${esc(cowName(d))}${d.group?' in '+esc(d.group):''}.</div>
-      <button type="button" class="fpick" data-num="${esc(qRaw)}" data-move="1" aria-pressed="${ckey(S.fCollar)===q}"><span class="collar long">${esc(qRaw)}</span><span class="main"><b>Move it to another cow</b><span class="sub">Takes it off ${esc(cowName(d))}</span></span></button>`;
+      <button type="button" class="fpick" data-num="${esc(qRaw)}" data-move="1" aria-pressed="${ckey(S.fCollar)===q}"><span class="collar long">${esc(qRaw)}</span><span class="main"><b>Move it to another animal</b><span class="sub">Takes it off ${esc(cowName(d))}</span></span></button>`;
     else notice=`<div class="notice warn">Collar ${esc(qRaw)} isn’t in your collar list.</div>
       <button type="button" class="fpick" data-num="${esc(qRaw)}" aria-pressed="${ckey(S.fCollar)===q}"><span class="collar long">${esc(qRaw)}</span><span class="main"><b>Use this new collar</b><span class="sub">Adds it to your collar list</span></span></button>`;
   }
@@ -1595,13 +1610,14 @@ function renderFit(){
   let cows=onHand().filter(needsCollar).filter(a=>!S.fGroup || a.group===S.fGroup).filter(a=>matches(a,cq)).sort(byTag);
   const ex=cq && cows.find(a=>ckey(a.collar)===ckey(cq)); if(ex) cows=[ex, ...cows.filter(a=>a!==ex)];
   if(S.fCow){ const i=cows.findIndex(a=>a.id===S.fCow); if(i>0) cows.unshift(cows.splice(i,1)[0]); }
-  $('#fCows').innerHTML = cows.length ? cows.slice(0,150).map(a=>`<button type="button" class="fpick" data-cow="${esc(a.id)}" aria-pressed="${S.fCow===a.id}">${idBox(a)}<span class="main"><span>${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="sub">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</span></span>${a.collar?`<span class="sub">Last collar: ${esc(a.collar)}</span>`:''}</span></button>`).join('')
-    : `<div class="empty"><strong>${cq||S.fGroup?'No cows match':'Every cow has a collar on'}</strong>${cq||S.fGroup?'Try another brand, tag or group.':'Nothing left to fit.'}</div>`;
+  const unkBtn = `<button type="button" class="fpick unk" data-cow="unknown" aria-pressed="${S.fCow==='unknown'}"><span class="aid none">?</span><span class="main"><b>Animal not known (lost tag)</b><span class="sub">Fit now, work out which one later</span></span></button>`;
+  $('#fCows').innerHTML = unkBtn + (cows.length ? cows.slice(0,150).map(a=>`<button type="button" class="fpick" data-cow="${esc(a.id)}" aria-pressed="${S.fCow===a.id}">${idBox(a)}<span class="main"><span>${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="sub">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</span></span>${a.collar?`<span class="sub">Last collar: ${esc(a.collar)}</span>`:''}</span></button>`).join('')
+    : `<div class="empty"><strong>${cq||S.fGroup?'No animals match':'Every animal has a collar on'}</strong>${cq||S.fGroup?'Try another brand, tag or group.':'Nothing left to fit.'}</div>`);
   const nC=fitCollars().length, nW=onHand().filter(needsCollar).length;
-  const sw=$('#fitSwitch'); sw.querySelector('[data-side=collar]').textContent=`Collars · ${nC}`; sw.querySelector('[data-side=cow]').textContent=`Cows · ${nW}`;
+  const sw=$('#fitSwitch'); sw.querySelector('[data-side=collar]').textContent=`Collars · ${nC}`; sw.querySelector('[data-side=cow]').textContent=`Animals · ${nW}`;
   // bottom bar
-  const cow=S.fCow && S.animals.get(S.fCow);
-  $('#fitPair').innerHTML = S.fCollar||cow ? `${S.fCollar?`Collar ${esc(S.fCollar)}`:'<span class="muted">Pick a collar</span>'} → ${cow?esc(cowName(cow)):'<span class="muted">pick a cow</span>'}` : '<span class="muted">Pick a collar and a cow</span>';
+  const cow=S.fCow==='unknown' ? {unknown:true} : S.fCow && S.animals.get(S.fCow);
+  $('#fitPair').innerHTML = S.fCollar||cow ? `${S.fCollar?`Collar ${esc(S.fCollar)}`:'<span class="muted">Pick a collar</span>'} → ${cow?(cow.unknown?'animal not known':esc(cowName(cow))):'<span class="muted">pick an animal</span>'}` : '<span class="muted">Pick a collar and an animal</span>';
   $('#fitGo').disabled = !(S.fCollar && cow);
 }
 function pickCollar(num){
@@ -1615,12 +1631,12 @@ function pickCollar(num){
 function pickCow(id){
   if(S.fCow===id){ S.fCow=''; renderFit(); return; }
   S.fCow=id; const a=S.animals.get(id);
-  // her collar from last season, if it's free
+  // the animal's collar from last season, if it's free
   if(!S.fCollar && a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar;
   if(!S.fCollar && S.fSide==='cow' && window.matchMedia('(max-width:699px)').matches) S.fSide='collar';
   renderFit();
 }
-// Give the collar to the cow and mark it fitted, in one step. Returns an undo function.
+// Give the collar to the animal and mark it fitted, in one step. Returns an undo function.
 function fitPair(num, cowId){
   const a=S.animals.get(cowId); if(!a || !num) return null;
   const now=Date.now(), undo=[];
@@ -1643,12 +1659,74 @@ function fitPair(num, cowId){
   };
 }
 $('#fitGo').addEventListener('click', ()=>{
+  if(S.fCollar && S.fCow==='unknown') return openFitUnknown(S.fCollar);
   const num=S.fCollar, cow=S.animals.get(S.fCow); if(!num || !cow) return;
   const undo=fitPair(num, cow.id);
   S.fCollar=''; S.fCow=''; $('#fq').value=''; $('#fScan').innerHTML=''; $('#fcq').value='';
   renderFit();
   toast(`Collar ${num} fitted to ${cowName(cow)}`, ()=>{ undo(); toast('Undone'); });
 });
+// Fit a collar to an animal we can't identify yet. Group and description are optional.
+function openFitUnknown(num){
+  const g=groups();
+  openSheet(`<div style="display:flex;flex-direction:column;gap:14px"><div class="sheet-h"><h2>Collar ${esc(num)} · animal not known</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="fuf" class="card">
+      <div class="small muted">Use this when the animal has lost its ear tag. Work out which one later on the Collars tab.</div>
+      <label class="f">Group (if known)<select id="fu-group"><option value="">Don’t know</option>${g.map(x=>`<option ${x===S.fGroup?'selected':''}>${esc(x)}</option>`).join('')}</select></label>
+      <label class="f">What does it look like? (optional)<input id="fu-note" type="text" placeholder="e.g. black heifer, white face, notch in left ear"></label>
+      <button class="btn primary fitgo" type="submit">Fit collar</button>
+    </form></div>`);
+  $('#fuf').addEventListener('submit', e=>{
+    e.preventDefault();
+    const now=Date.now(), undo=[], group=$('#fu-group').value, note=$('#fu-note').value.trim();
+    // anyone wearing this number now gives it up
+    onHand().filter(o=>o.collarOn && ckey(o.collar)===ckey(num)).forEach(o=>{ undo.push(['animals/'+o.id, {collar:o.collar, collarOn:true}]);
+      patch('animals/'+o.id, {collar:'', collarOn:false, updatedAt:now, updatedBy:me()}); logChange(o.id,'animal',label(o),'collar moved to an unknown animal',[{f:'collar',from:o.collar,to:''}]); });
+    let c=collarFor(num), added='';
+    if(!c){ added=cid(num); put('collars/'+added, {number:num, neckband:/^\d{6,}$/.test(num)?num:'', note:'', status:'ok', unknownAt:today(), unknownGroup:group, unknownNote:note, createdAt:now, updatedAt:now, updatedBy:me()}); }
+    else { undo.push(['collars/'+c.id, {unknownAt:c.unknownAt||'', unknownGroup:c.unknownGroup||'', unknownNote:c.unknownNote||''}]);
+      patch('collars/'+c.id, {unknownAt:today(), unknownGroup:group, unknownNote:note, updatedAt:now, updatedBy:me()}); }
+    logChange(added||c.id,'collar',`Collar ${num}`,'fitted to an unknown animal',[{f:'Group',from:'',to:group||'not known'}].concat(note?[{f:'Description',from:'',to:note}]:[]));
+    closeSheet(); S.fCollar=''; S.fCow=''; $('#fq').value=''; $('#fScan').innerHTML=''; renderFit();
+    toast(`Collar ${num} fitted to an unknown animal`, ()=>{ const t=Date.now(); undo.forEach(([path,d])=>patch(path,{...d, updatedAt:t, updatedBy:me()})); if(added) remove('collars/'+added); toast('Undone'); });
+  });
+}
+// Animals that could be the unknown one: on hand, not calves, no fitted collar, in the group if one was given.
+const likelyFor = c => onHand().filter(a=>a.kind!=='calf' && !a.collarOn && (!c.unknownGroup || a.group===c.unknownGroup)).sort(byTag);
+// Work out which animal an unknown collar is on, one collar at a time, by elimination.
+function openUnknown(i){
+  const list=unknownCollars(); if(!list.length){ closeSheet(); return; }
+  i=((i%list.length)+list.length)%list.length; const c=list[i], xs=likelyFor(c);
+  const desc=a=>`<span class="pill">${esc(KIND[a.kind]||'Cow')}</span> ${brandsHtml(a)||'<span class="muted">No brand</span>'}`;
+  const more=a=>[a.group, a.collar?`last collar ${esc(a.collar)}`:'', a.notes?esc(a.notes):''].filter(Boolean).join(' · ');
+  openSheet(`<div id="uk" style="display:flex;flex-direction:column;gap:14px">
+    <div class="sheet-h"><h2>Which animal is it?</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    ${list.length>1?`<div class="small muted">Collar ${i+1} of ${list.length}</div>`:''}
+    <div class="card"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${collarHtml({collar:c.number})}<span><b>On: unknown animal</b>${c.unknownGroup?` · ${esc(c.unknownGroup)}`:''}</span></div>
+      ${c.unknownNote?`<div>${esc(c.unknownNote)}</div>`:''}<div class="small muted">Fitted ${esc(fmtDate(c.unknownAt))}</div></div>
+    ${xs.length===1 ? `<div class="card"><div style="font-size:18px">Only one animal left without a collar: <b>${esc(KIND[xs[0].kind]||'Cow')} ${esc([xs[0].brand1,xs[0].brand2].filter(Boolean).join(' ')||label(xs[0]))}</b>. Is this the one?</div>
+        <div class="small muted">${more(xs[0])}</div>
+        <button type="button" class="btn primary fitgo" data-match="${esc(xs[0].id)}">This is the one</button></div>`
+      : xs.length ? `<div><b>${xs.length} animals${c.unknownGroup?' in '+esc(c.unknownGroup):''} have no collar on</b></div>
+        <div class="fit-list">${xs.map(a=>`<div class="fpick" style="cursor:default"><span class="main"><span>${desc(a)}</span><span class="sub">${more(a)||'&nbsp;'}</span></span><button type="button" class="btn primary" style="margin-left:auto;flex:none" data-match="${esc(a.id)}">This is the one</button></div>`).join('')}</div>`
+      : `<div class="empty"><strong>No animals left to match</strong>Every animal${c.unknownGroup?' in '+esc(c.unknownGroup):''} has a collar on. Check the group, or take this collar off.</div>`}
+    <div class="fab-row"><button type="button" class="btn" data-skip="1">Not sure yet</button></div>
+  </div>`);
+  $('#uk').addEventListener('click', e=>{
+    if(e.target.closest('[data-skip]')){ if(list.length>1 && i<list.length-1) openUnknown(i+1); else closeSheet(); return; }
+    const m=e.target.closest('[data-match]'); if(!m) return;
+    const a=S.animals.get(m.dataset.match); if(!a) return;
+    const note=`Ear tag lost ${fmtDate(today())}, needs a new tag.`, oldNotes=a.notes||'';
+    const undoFit=fitPair(c.number, a.id), t=Date.now();
+    patch('animals/'+a.id, {notes: oldNotes ? oldNotes+' '+note : note, updatedAt:t, updatedBy:me()});
+    const prev={unknownAt:c.unknownAt, unknownGroup:c.unknownGroup||'', unknownNote:c.unknownNote||''};
+    patch('collars/'+c.id, {unknownAt:'', unknownGroup:'', unknownNote:'', updatedAt:t, updatedBy:me()});
+    logChange(a.id,'animal',label(a),`identified as the animal wearing collar ${c.number}`,[{f:'notes',from:oldNotes,to:oldNotes?oldNotes+' '+note:note}]);
+    if(unknownCollars().length) openUnknown(i); else closeSheet();
+    toast(`Collar ${c.number} is on ${KIND[a.kind]||'Cow'} ${a.brand1||label(a)}`, ()=>{ undoFit(); const u=Date.now();
+      patch('animals/'+a.id, {notes:oldNotes, updatedAt:u, updatedBy:me()}); patch('collars/'+c.id, {...prev, updatedAt:u, updatedBy:me()}); toast('Undone'); });
+  });
+}
 $('#fitSwitch').addEventListener('click', e=>{ const b=e.target.closest('[data-side]'); if(!b) return; S.fSide=b.dataset.side; renderFit(); });
 $('#fCollars').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
 $('#fNotice').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });

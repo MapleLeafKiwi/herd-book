@@ -10,7 +10,7 @@ const srv = http.createServer((q,r)=>{ let p=path.join(REPO, decodeURIComponent(
 const cow = (vid, more) => Object.assign({kind:'cow', brand1:'Bar 9', vid, group:'North', updatedAt:1}, more);
 const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, preg:{},
   animals:{ a:cow('A1',{collar:'1001',collarOn:false}), b:cow('B2'), c:cow('C3',{collar:'1003',collarOn:true}), d:cow('D4',{collar:'1004',collarOn:false}),
-            e:cow('E5',{kind:'calf'}), f:cow('F6') },
+            e:cow('E5',{kind:'calf'}), f:cow('F6'), g:cow('G7',{kind:'bull', brand1:'Bar 7', group:'South'}) },
   collars:Object.fromEntries([['1001','ok'],['1002','ok'],['1003','ok'],['1004','ok'],['1005','lost']].map(([n,st])=>['c-'+n,{number:n,status:st,note:''}])) };
 (async()=>{
   const browser = await chromium.launch();
@@ -45,7 +45,8 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.click('#fitGo'); await wait(200);
   let a = await A('a'); ok(a.collar==='1001' && a.collarOn===true, 'Fit gives the collar and marks it fitted in one step');
   ok((await pg.textContent('#toast')).includes('Collar 1001 fitted'), 'toast says what was fitted');
-  ok((await pg.textContent('#fitPair')).includes('Pick a collar and a cow'), 'picks clear after fitting');
+  { const t=await pg.locator('#toast').boundingBox(), f=await pg.locator('#fitGo').boundingBox(); ok(t.y+t.height<=f.y, 'Undo message sits above the Fit button, not over it'); }
+  ok((await pg.textContent('#fitPair')).includes('Pick a collar and an animal'), 'picks clear after fitting');
   // undo
   await pg.click('#toast .undo'); await wait(200);
   a = await A('a'); ok(a.collar==='1001' && a.collarOn===false, 'Undo puts it back');
@@ -92,6 +93,52 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   const CF=path.join(OUT,'maker.csv'); fs.writeFileSync(CF, 'Serial,Note\n7700000001,box 1\n7700000002,box 1\n');
   await pg.click('#cAddBtn'); await pg.setInputFiles('#ca-file', CF); await pg.waitForSelector('#ca-col .notice'); await pg.click('#caf button[type=submit]'); await wait(200);
   ok(await pg.evaluate(()=>window.__herdbook.state.collars.has('c-7700000002')), 'CSV list from the collar maker works too');
+  // ---- animal not known (lost ear tag) ----
+  const C = n => pg.evaluate(n=>window.__herdbook.state.collars.get('c-'+n), n);
+  const herdSize = await pg.evaluate(()=>window.__herdbook.state.animals.size);
+  await pg.goto('http://localhost:8766/#fit'); await wait(200);
+  ok((await pg.textContent('#fitSwitch')).includes('Animals') && !/\b(she|her|cows?)\b/i.test((await pg.textContent('#fitSwitch'))+(await pg.textContent('#fitPair'))+(await pg.textContent('section[data-view=fit] .help'))), 'fitting screen wording is neutral: Animals, no she/her/cow');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.fill('#fq','1001'); await pg.click('#fCollars [data-num="1001"]');
+  await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=unknown]'); await wait(100);
+  ok((await pg.textContent('#fitPair')).includes('Collar 1001 → animal not known'), 'bottom bar: collar → animal not known');
+  await pg.click('#fitGo'); await pg.selectOption('#fu-group','South'); await pg.fill('#fu-note','black, white face'); await pg.click('#fuf button[type=submit]'); await wait(200);
+  let c1 = await C('1001'); ok(c1.unknownAt && c1.unknownGroup==='South' && c1.unknownNote==='black, white face', 'collar saved as on an unknown animal, with group and description');
+  ok(await pg.evaluate(()=>window.__herdbook.state.animals.size)===herdSize, 'no placeholder animal added to the herd');
+  await pg.click('#toast .undo'); await wait(200);
+  ok(!(await C('1001')).unknownAt, 'Undo takes it back off the unknown animal');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.fill('#fq','1001'); await pg.click('#fCollars [data-num="1001"]');
+  await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=unknown]'); await pg.click('#fitGo');
+  await pg.selectOption('#fu-group','South'); await pg.fill('#fu-note','black, white face'); await pg.click('#fuf button[type=submit]'); await wait(200);
+  await pg.goto('http://localhost:8766/#collars'); await wait(200);
+  ok((await pg.textContent('#cWarn')).includes('1 collar is on an unknown animal. Work out which one'), 'Collars tab notice: 1 collar is on an unknown animal');
+  ok((await pg.textContent('#collarList')).includes('On: unknown animal · South'), 'collar tile: On: unknown animal plus group');
+  ok(/Fitted · 5/.test(await pg.textContent('#cChips')), 'Fitted count includes the collar on the unknown animal: '+(await pg.textContent('#cChips')));
+  // work it out: only the bull in South has no collar
+  await pg.click('#cUnknown'); await wait(100);
+  ok((await pg.textContent('#uk')).includes('Only one animal left without a collar: Bull Bar 7. Is this the one?'), 'elimination narrows to one and says so plainly');
+  ok((await pg.textContent('#uk')).includes('black, white face'), 'helper shows the description');
+  await pg.click('#uk [data-match]'); await wait(200);
+  let g = await A('g'); c1 = await C('1001');
+  ok(g.collar==='1001' && g.collarOn===true && !c1.unknownAt, 'This is the one: the bull gets the collar, fitted, unknown details cleared');
+  ok(/Ear tag lost .+, needs a new tag\./.test(g.notes||''), 'note added: '+g.notes);
+  await pg.click('#toast .undo'); await wait(200);
+  g = await A('g'); ok(g.collar==='' || !g.collar, 'Undo: bull has no collar again'); ok(!(g.notes||'').includes('Ear tag'), 'Undo: note removed'); ok(!!(await C('1001')).unknownAt, 'Undo: collar back on the unknown animal');
+  // no group given: all groups, not calves, not animals with a collar on
+  await pg.goto('http://localhost:8766/#fit'); await wait(200);
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.fill('#fq','3001'); await pg.click('#fNotice [data-num="3001"]');
+  await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=unknown]'); await pg.click('#fitGo'); await pg.click('#fuf button[type=submit]'); await wait(200);
+  await pg.goto('http://localhost:8766/#collars'); await wait(200);
+  ok((await pg.textContent('#cWarn')).includes('2 collars are on an unknown animal'), 'notice counts 2 collars');
+  await pg.click('#cUnknown'); await wait(100);
+  if(!(await pg.textContent('#uk')).includes('3001')){ await pg.click('#uk [data-skip]'); await wait(100); }
+  const ukText = await pg.textContent('#uk');
+  ok(ukText.includes('2 animals have no collar on') && !ukText.includes('E5') && ukText.includes('Bar 7'), 'no group: every group, bulls included, calves and collared animals left out');
+  await pg.click('#uk [data-skip]'); await wait(100);
+  ok(!!(await C('3001')).unknownAt, 'Not sure yet leaves it for another day');
+  if(await pg.isVisible('#sheet .x')) await pg.click('#sheet .x');
+  // new season clears unknown-animal collars too
+  await pg.click('#seasonBtn'); await pg.click('#seasonBtn'); await wait(200);
+  ok(!(await C('3001')).unknownAt && !(await C('1001')).unknownAt && (await A('b')).collarOn===false, 'new season clears collars on unknown animals as well as fitted ones');
   // wide screen: both lists side by side
   await pg.setViewportSize({width:1024, height:800}); await pg.goto('http://localhost:8766/#fit'); await wait(300);
   ok(await pg.isVisible('#fCollars') && await pg.isVisible('#fCows') && !(await pg.isVisible('#fitSwitch')), 'wide screen shows both lists side by side');
