@@ -361,7 +361,7 @@ function parseNums(t){
 function addCollars(nums, note){
   const now=Date.now(); let n=0;
   nums.forEach(num=>{ num=String(num).trim(); if(!num || S.collars.has(cid(num))) return;
-    outbox.push({op:'set', path:'collars/'+cid(num), data:{number:num, note:note||'', status:'ok', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}); n++; });
+    outbox.push({op:'set', path:'collars/'+cid(num), data:{number:num, neckband:/^\d{6,}$/.test(num)?num:'', note:note||'', status:'ok', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}); n++; });
   saveOutbox();
   if(n) logChange('collars','collar',`Added ${n} collar${n>1?'s':''} to the list`,'added',[]); else recompute();
   return n;
@@ -414,17 +414,52 @@ $('#cExport').addEventListener('click', ()=>{
     rows.push([c.number,STATE[collarState(c,w)],a?label(a):'',a?a.brand1:'',a?a.brand2:'',a?a.group:'',a?(a.collarOn?'yes':'no'):'',c.note||'']); });
   saveFile(`collars-${today()}.csv`, rows.map(r=>r.map(csvCell).join(',')).join('\n'), 'text/csv');
 });
+async function collarFile(f){
+  let rows;
+  if(/\.(csv|txt)$/i.test(f.name)) rows=parseCsv(await f.text());
+  else { const X=await loadXLSX(); const wb=X.read(await f.arrayBuffer(), {type:'array'});
+    rows=[]; wb.SheetNames.forEach(n=>{ rows=rows.concat(X.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:false, defval:''})); }); }
+  rows=rows.map(r=>r.map(v=>String(v??'').trim())).filter(r=>r.some(Boolean));
+  const looks = v => /^[A-Za-z0-9-]{3,24}$/.test(v) && /\d{3}/.test(v);
+  const width=Math.max(0,...rows.map(r=>r.length)), cols=[];
+  for(let j=0;j<width;j++){
+    const head=rows.find(r=>r[j] && !looks(r[j])); const name=(head&&head[j]) || `Column ${j+1}`;
+    const vals=rows.map(r=>r[j]).filter(looks);
+    if(vals.length) cols.push({name, vals, score:vals.length + (/serial|neckband|collar|device|imei|esn/i.test(name)?1000:0) + (vals.every(v=>/^\d+$/.test(v))?10:0)});
+  }
+  let pick=0; cols.forEach((c,i)=>{ if(c.score>cols[pick].score) pick=i; });
+  return {cols, pick};
+}
 function openAddCollars(){
   openSheet(`<div style="display:flex;flex-direction:column;gap:14px"><div class="sheet-h"><h2>Add collars</h2><button class="x" type="button" aria-label="Close">×</button></div>
     <form id="caf" class="card">
+      <div class="fab-row"><label class="btn" for="ca-file">From a spreadsheet</label></div>
+      <input id="ca-file" type="file" accept=".xlsx,.xls,.csv,.txt" hidden>
+      <div class="small muted">Got a list of serial numbers from the collar maker? Pick the file and the numbers are filled in below.</div>
+      <div id="ca-col"></div>
       <label class="f">Collar numbers<textarea id="ca-nums" placeholder="1-150, 152, 160-175"></textarea></label>
       <div class="small muted" id="ca-prev">Use a dash for a run of numbers and commas between groups.</div>
       <label class="f">Note for these collars (optional)<input id="ca-note" type="text" placeholder="e.g. bought 2026, orange"></label>
       <button class="btn primary" type="submit">Add collars</button>
     </form></div>`);
-  $('#ca-nums').addEventListener('input', ()=>{ const ns=parseNums($('#ca-nums').value); const nw=ns.filter(n=>!S.collars.has(cid(n)));
+  $('#ca-nums').addEventListener('input', ()=>{ const ns=nums(); const nw=ns.filter(n=>!S.collars.has(cid(n)));
     $('#ca-prev').textContent = ns.length ? `${nw.length} new collar${nw.length===1?'':'s'}${ns.length>nw.length?`, ${ns.length-nw.length} already listed`:''}${nw.length?`: ${nw.slice(0,8).join(', ')}${nw.length>8?' …':''}`:''}` : 'Use a dash for a run of numbers and commas between groups.'; });
-  $('#caf').addEventListener('submit', e=>{ e.preventDefault(); const n=addCollars(parseNums($('#ca-nums').value), $('#ca-note').value.trim()); closeSheet(); toast(n?`Added ${n} collar${n>1?'s':''}`:'Those collars are already listed'); });
+  // From a spreadsheet: the column that looks most like serial numbers is used; the user can pick another.
+  let file=null, fileText='';
+  const nums = () => $('#ca-nums').value===fileText && file ? file.list : parseNums($('#ca-nums').value);
+  const fill = () => { const col=file.cols[file.pick]; file.list=[...new Set(col.vals)]; fileText=file.list.join('\n'); $('#ca-nums').value=fileText;
+    $('#ca-col').innerHTML = `<div class="notice ok">Found ${file.list.length} number${file.list.length===1?'':'s'} in “${esc(col.name)}”.</div>`
+      + (file.cols.length>1 ? `<label class="f" style="margin-top:8px">Wrong column? Use<select id="ca-pick">${file.cols.map((c,i)=>`<option value="${i}" ${i===file.pick?'selected':''}>${esc(c.name)} (${c.vals.length})</option>`).join('')}</select></label>` : '');
+    $('#ca-nums').dispatchEvent(new Event('input')); };
+  $('#ca-col').addEventListener('change', e=>{ if(e.target.id==='ca-pick'){ file.pick=Number(e.target.value); fill(); } });
+  $('#ca-file').addEventListener('change', async e=>{
+    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    $('#ca-col').innerHTML='<div class="small muted">Reading the file…</div>';
+    try{ file=await collarFile(f); }catch{ file=null; }
+    if(!file || !file.cols.length){ $('#ca-col').innerHTML='<div class="notice warn">No serial numbers found in that file. Check it’s the list from the collar maker.</div>'; return; }
+    fill();
+  });
+  $('#caf').addEventListener('submit', e=>{ e.preventDefault(); const n=addCollars(nums(), $('#ca-note').value.trim()); closeSheet(); toast(n?`Added ${n} collar${n>1?'s':''}`:'Those collars are already listed'); });
 }
 function openCollar(id){
   const c=S.collars.get(id); if(!c){ closeSheet(); return; }

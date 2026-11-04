@@ -81,6 +81,17 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.click('[data-lost]'); await wait(200);
   ok(await pg.evaluate(()=>window.__herdbook.state.collars.get('c-1001').status)==='ok', 'found it: back in use');
   await pg.click('#sheet .x');
+  // add collars from the collar maker's spreadsheet (made-up serials)
+  const X=require('xlsx'); const ws=X.utils.aoa_to_sheet([['Order #','Device Serial','Model'],[1,'0012345678','EX-200'],[2,'0012345679','EX-200'],[3,'0012345680','EX-200']]);
+  const wb=X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Shipment'); const XF=path.join(OUT,'maker.xlsx'); X.writeFile(wb, XF);
+  await pg.click('#cAddBtn'); await pg.setInputFiles('#ca-file', XF); await pg.waitForSelector('#ca-col .notice');
+  ok((await pg.textContent('#ca-col')).includes('Found 3 numbers in “Device Serial”'), 'spreadsheet: serial column found: '+(await pg.textContent('#ca-col')));
+  ok((await pg.inputValue('#ca-nums')).startsWith('0012345678'), 'spreadsheet: leading zeros kept');
+  await pg.click('#caf button[type=submit]'); await wait(200);
+  ok(await pg.evaluate(()=>{ const c=window.__herdbook.state.collars.get('c-0012345678'); return c && c.neckband==='0012345678'; }), 'spreadsheet collars added, serial saved as the eShepherd neckband');
+  const CF=path.join(OUT,'maker.csv'); fs.writeFileSync(CF, 'Serial,Note\n7700000001,box 1\n7700000002,box 1\n');
+  await pg.click('#cAddBtn'); await pg.setInputFiles('#ca-file', CF); await pg.waitForSelector('#ca-col .notice'); await pg.click('#caf button[type=submit]'); await wait(200);
+  ok(await pg.evaluate(()=>window.__herdbook.state.collars.has('c-7700000002')), 'CSV list from the collar maker works too');
   // wide screen: both lists side by side
   await pg.setViewportSize({width:1024, height:800}); await pg.goto('http://localhost:8766/#fit'); await wait(300);
   ok(await pg.isVisible('#fCollars') && await pg.isVisible('#fCows') && !(await pg.isVisible('#fitSwitch')), 'wide screen shows both lists side by side');
