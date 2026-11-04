@@ -347,7 +347,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pb.screenshot({path:path.join(OUT,'log.png'), fullPage:false});
   // collar order set on one phone shows on another after syncing
   await pa.goto('http://localhost:8765/#fit'); await wait(300); await pa.click('#sheet .x').catch(()=>{});
-  await pa.click('#ordBtn'); await pa.fill('#ord-nums','5, 3, 4'); await pa.click('#ord-add'); await pa.click('#sheet .x'); await wait(2200);
+  await pa.click('#fitSwitch [data-side=collar]'); await pa.click('#ordBtn'); await pa.fill('#ord-nums','5, 3, 4'); await pa.click('#ord-add'); await pa.click('#sheet .x'); await wait(2200);
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   await pb.evaluate(()=>window.__herdbook.sync()); await wait(500);
   await pb.goto('http://localhost:8765/#fit'); await wait(300); await pb.click('#sheet .x').catch(()=>{});

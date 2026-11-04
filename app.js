@@ -1798,7 +1798,6 @@ function renderFit(){
   const cq=$('#fcq').value.trim();
   let cows=onHand().filter(needsCollar).filter(a=>!S.fGroup || a.group===S.fGroup).filter(a=>matches(a,cq)).sort(byTag);
   const ex=cq && cows.find(a=>ckey(a.collar)===ckey(cq)); if(ex) cows=[ex, ...cows.filter(a=>a!==ex)];
-  if(S.fCow){ const i=cows.findIndex(a=>a.id===S.fCow); if(i>0) cows.unshift(cows.splice(i,1)[0]); }
   const unkBtn = `<button type="button" class="fpick unk" data-cow="unknown" aria-pressed="${S.fCow==='unknown'}"><span class="aid none">?</span><span class="main"><b>Animal not known (lost tag)</b><span class="sub">Fit now, work out which one later</span></span></button>`;
   $('#fCows').innerHTML = unkBtn + (cows.length ? cows.slice(0,150).map(a=>`<button type="button" class="fpick" data-cow="${esc(a.id)}" aria-pressed="${S.fCow===a.id}">${idBox(a)}<span class="main"><span>${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="sub">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</span></span>${a.collar?`<span class="sub">Last collar: ${esc(a.collar)}</span>`:''}</span></button>`).join('')
     : `<div class="empty"><strong>${cq||S.fGroup?'No animals match':'Every animal has a collar on'}</strong>${cq||S.fGroup?'Try another brand, tag or group.':'Nothing left to fit.'}</div>`);

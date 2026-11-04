@@ -66,6 +66,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   ok(await pg.evaluate(()=>window.__herdbook.state.collars.has('c-2001')), 'new collar added to the list');
   // move a collar: 1004 was last on D4, fit it to F6 instead
   await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=f]'); await wait(100);
+  ok(await pg.evaluate(()=>{ const list=[...document.querySelectorAll('#fCows .fpick:not(.unk)')].map(x=>x.dataset.cow); return list[0]!=='f' && list.indexOf('f')>0 && document.querySelector('#fCows [data-cow=f]').getAttribute('aria-pressed')==='true'; }), 'picked animal is highlighted in place, not moved to the top');
   await pg.click('#fCollars [data-num="1004"]'); await wait(100);
   ok((await pg.textContent('#fitPair')).includes('Collar 1004 → Bar 9 F6'), 'cow picked first keeps her pick');
   await pg.click('#fitGo'); await wait(200);

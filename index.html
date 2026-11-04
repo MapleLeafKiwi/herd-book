@@ -206,7 +206,7 @@ select.rpick{width:auto;max-width:100%;min-height:44px;padding:6px 36px 6px 10px
 select.rpick:hover{border-color:var(--line)}
 /* fit collars: two pick lists, side by side when there's room, one at a time on a phone */
 .fitbig{display:flex;align-items:center;justify-content:center;min-height:60px;font-size:20px;text-decoration:none}
-.fit-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ordbtn{margin-left:auto}.fit-top h2{margin:0}.fit-top .btn{text-decoration:none;display:inline-flex;align-items:center;color:var(--ink)}
+.fit-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ordbtn{width:100%;min-height:52px}.fit-top h2{margin:0}.fit-top .btn{text-decoration:none;display:inline-flex;align-items:center;color:var(--ink)}
 .fit-sticky{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--headh,104px));z-index:3;background:var(--bg);padding-block:8px;margin-block:-8px;display:flex;flex-direction:column;gap:8px}
 .fit-switch button{min-height:52px;font-size:17px}
 .fit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
@@ -310,13 +310,14 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
   </section>
 
   <section data-view="fit" data-fside="collar" hidden>
-    <div class="fit-top"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2><button type="button" class="btn ordbtn" id="ordBtn">Order collars</button></div>
+    <div class="fit-top"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2></div>
     <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Pick a collar and an animal, in either order, then tap <b>Fit</b>.</li><li>Pick an animal and its collar from last season is picked for you. Pick a collar and the animal it was last on is picked for you.</li><li>Lost ear tag? Pick <b>Animal not known (lost tag)</b>. Work out which one later on the Collars tab.</li><li>Type the collar number or tap <b>Photo</b> to read it off the collar. It jumps to the top of the list.</li><li>Collars laid out ready? Tap <b>Order collars</b> and type or scan them in the order they’ll go on. Drag a collar by its handle to move it. The next one is picked for you; pick the animal and tap <b>Fit</b>. <b>Skip</b> sends it to the back, <b>Lost</b> takes it out.</li><li>Made a mistake? Tap <b>Undo</b> on the message that pops up.</li></ul></details>
     <div class="fit-sticky">
       <div class="seg fit-switch" id="fitSwitch"><button type="button" data-side="collar" aria-pressed="true">Collars</button><button type="button" data-side="cow" aria-pressed="false">Animals</button></div>
       <div class="fit-grid">
         <div class="fit-col" data-side="collar">
           <div class="inrow"><input id="fq" class="big-search" type="search" placeholder="Collar #" autocomplete="off" inputmode="numeric"></div>
+          <button type="button" class="btn ordbtn" id="ordBtn">Order collars</button>
           <div id="fScan"></div><div id="fNotice"></div>
         </div>
         <div class="fit-col" data-side="cow">

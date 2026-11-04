@@ -24,12 +24,13 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   const hideToast = () => pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
   await pg.goto('http://localhost:8768/#fit'); await wait(300); await pg.click('#st-skip');
   ok(!(await pg.textContent('main')).toLowerCase().includes('fence'), 'no mention of fences');
+  ok(await pg.evaluate(()=>{ const q=document.querySelector('#fq').getBoundingClientRect(), b=document.querySelector('#ordBtn').getBoundingClientRect(); return b.top>=q.bottom && b.top-q.bottom<30 && document.querySelector('#ordBtn').closest('.fit-col[data-side=collar]'); }), 'Order collars button sits under the collar search box');
   // no order: last season's collar is still pre-picked
   await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=a7]');
   ok((await pg.textContent('#fitPair')).includes('Collar 105 → Bar 9 A7'), 'no order set: picking an animal still pre-picks last season’s collar');
   await pg.click('#fCows [data-cow=a7]'); await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#fCollars [data-num="105"]');
   // type a range
-  await pg.click('#ordBtn'); await pg.fill('#ord-nums','103-101, 111, 112, 999'); await pg.click('#ord-add');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#ordBtn'); await pg.fill('#ord-nums','103-101, 111, 112, 999'); await pg.click('#ord-add');
   ok(JSON.stringify(await line())==='["103","102","101"]', 'typed range sets the order 103, 102, 101: '+JSON.stringify(await line()));
   const msg = await pg.textContent('#ord-msg');
   ok(msg.includes('Not in your collar list: 999') && msg.includes('Already fitted: 112') && msg.includes('Marked lost: 111'), 'numbers not in the list, fitted or lost are listed: '+msg);
@@ -57,9 +58,9 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.click('#ord-out [data-oc="c-104"] [data-o="add"]');
   ok((await line()).join()==='103,101,102,7203418856,104', 'added from Not in the order to the end');
   await pg.screenshot({path:path.join(OUT,'order.png')}); await pg.click('#sheet .x');
-  await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
   ok((await pg.textContent('#fitPair')).includes('Collar 101'), 'after reordering, the new front collar is the one picked');
-  await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#ordBtn'); await wait(300); await dragTo('c-101','c-103'); await pg.click('#sheet .x');
   // fitting several in a row
   ok((await pg.textContent('#fCollars')).includes('Next collar') && (await pg.textContent('#fitPair')).includes('Collar 103'), 'next collar in line is picked and labelled “Next collar”');
   await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=a1]'); await pg.click('#fitGo'); await hideToast();
@@ -87,10 +88,10 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.click('#toast .undo'); await wait(200);
   ok((await line()).join()==='7203418856' && !(await A('a4')).collar, 'Undo puts the collar back in the line');
   // clear collar order
-  await pg.click('#ordBtn'); await pg.click('#ord-clear'); await pg.click('#ord-clear'); await pg.click('#sheet .x');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#ordBtn'); await pg.click('#ord-clear'); await pg.click('#ord-clear'); await pg.click('#sheet .x');
   ok((await line()).length===0 && !(await pg.textContent('#fCollars')).includes('Next collar'), 'Clear collar order');
   // new season clears it
-  await pg.click('#ordBtn'); await pg.fill('#ord-nums','108-109'); await pg.click('#ord-add'); await pg.click('#sheet .x');
+  await pg.click('#fitSwitch [data-side=collar]'); await pg.click('#ordBtn'); await pg.fill('#ord-nums','108-109'); await pg.click('#ord-add'); await pg.click('#sheet .x');
   await pg.goto('http://localhost:8768/#collars'); await wait(200); await pg.click('#seasonBtn'); await pg.click('#seasonBtn'); await wait(200);
   ok(await pg.evaluate(()=>[...window.__herdbook.state.collars.values()].every(c=>c.seq===''||c.seq==null)), 'new season clears the collar order');
   await browser.close(); srv.close();
