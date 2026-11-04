@@ -217,7 +217,7 @@ select.rpick:hover{border-color:var(--line)}
 .fpick .main{min-width:0;display:flex;flex-direction:column;gap:2px}
 .fpick .sub{font-size:14px;color:var(--muted)}
 .fpick .collar{flex:none}
-section[data-view="fit"]{padding-bottom:110px}
+section[data-view="work"]{padding-bottom:110px}
 .fitbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.12);padding-block:10px calc(10px + env(safe-area-inset-bottom,0px))}
 .fitbar-in{display:flex;align-items:center;gap:12px}
 .fitpair{flex:1;min-width:0;font-weight:700;font-size:17px;line-height:1.3}
@@ -227,7 +227,7 @@ section[data-view="fit"]{padding-bottom:110px}
   section[data-fside="collar"] .fit-col[data-side="cow"], section[data-fside="cow"] .fit-col[data-side="collar"]{display:none}}
 @media (min-width:700px){.fit-switch{display:none}}
 /* keep messages clear of the Fit bar and of pop-up buttons */
-body:has(section[data-view="fit"]:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+body:has(section[data-view="work"]:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 body:has(#scrim:not([hidden])) .toast{top:calc(12px + env(safe-area-inset-top,0px));bottom:auto}
 .toast{pointer-events:none}.toast .undo{pointer-events:auto}
 .toast .undo{margin-left:12px;border:0;background:none;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;min-height:40px;padding:0 6px}
@@ -264,6 +264,36 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
 .fit-list.sorting .ordrow.dragging.settling{transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease;box-shadow:0 2px 6px rgba(0,0,0,.12)}
 @media (prefers-reduced-motion: reduce){.fit-list.sorting .ordrow,.fit-list.sorting .ordrow.dragging.settling{transition:none}}
 .ordrow.dragging .grip{cursor:grabbing;color:var(--ink)}
+input[type=checkbox]{accent-color:var(--primary)}
+/* header gear (Settings) */
+.gear{flex:none;display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;color:var(--head-ink)}
+.gear[aria-current="page"]{background:var(--nav-on);color:var(--nav-on-ink)}
+.hrow .net{margin-left:auto}
+.settings-h{font-size:26px;margin:0}
+/* work cattle */
+section[data-view="work"][data-nocollar="1"] .fit-col[data-side="collar"], section[data-view="work"][data-nocollar="1"] .fit-switch{display:none}
+section[data-view="work"][data-nocollar="1"] .fit-grid{grid-template-columns:1fr}
+.wday{gap:8px}.wday-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}.wday-top h2{margin:0}
+.wprog{font-size:17px}.wprog b{font-family:var(--display);font-size:24px}
+.wq{font-size:19px}
+.jobrow{border-top:1px solid var(--line);padding-top:8px}
+.jobpick{display:flex;align-items:center;gap:12px;min-height:52px;font-weight:700;font-size:17px;cursor:pointer}
+.jobpick input,.bigticks input{width:30px;height:30px;flex:none}
+.bigticks label{min-height:52px}
+.jobbody{display:flex;flex-direction:column;gap:10px;padding:4px 0 10px 42px}
+.tprod{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:10px}
+.tprod-h{display:flex;justify-content:space-between;align-items:center}
+.wpanel{max-height:min(58vh,520px);overflow:auto;display:flex;flex-direction:column;gap:6px;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.wp-head{font-size:17px}
+.wjob{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)}
+.wjob-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.wjob-l{font-weight:700;font-size:17px;min-height:40px;display:flex;align-items:center}
+.wjob:not(.on) .wjob-main{opacity:.55}
+.wtick{border:0;background:none;padding:0;cursor:pointer}
+.wtick[aria-checked="true"] .tick{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.wtick[aria-checked="true"] .tick::after{content:"";width:12px;height:20px;border:solid currentColor;border-width:0 4px 4px 0;transform:rotate(45deg) translate(-2px,-2px)}
+.wseg button{min-height:48px;font-size:16px}
+.unit{align-self:center;font-weight:700;color:var(--muted)}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -273,14 +303,14 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
 <body>
 <header>
   <div class="wrap">
-    <div class="hrow"><h1>Herd Book</h1><a class="net" id="net" href="#log" aria-label="Signal and sync details">Online</a></div>
+    <div class="hrow"><h1>Herd Book</h1><a class="net" id="net" href="#settings" aria-label="Signal and sync details">Online</a><a class="gear" id="gearBtn" href="#settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M19.4 13c.04-.33.06-.66.06-1s-.02-.67-.06-1l2.1-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.48 1a7.3 7.3 0 0 0-1.73-1l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.62.25-1.2.59-1.73 1l-2.48-1a.5.5 0 0 0-.6.22l-2 3.46a.49.49 0 0 0 .12.64L4.56 11c-.04.33-.06.67-.06 1s.02.67.06 1l-2.1 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.3.6.22l2.48-1c.53.4 1.11.75 1.73 1l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65c.62-.25 1.2-.59 1.73-1l2.48 1c.22.08.48 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64L19.4 13zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg></a></div>
     <nav>
       <a href="#herd" data-tab="herd">Herd</a>
+      <a href="#work" data-tab="work">Work Cattle</a>
       <a href="#collars" data-tab="collars">Collars</a>
       <a href="#breeding" data-tab="breeding">Breeding</a>
       <a href="#health" data-tab="health">Health</a>
       <a href="#money" data-tab="money" id="navMoney">Money</a>
-      <a href="#log" data-tab="log">Log</a>
     </nav>
   </div>
 </header>
@@ -288,7 +318,7 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
 <main class="wrap">
   <button type="button" class="swap-bar" id="swapBar" hidden></button>
   <button type="button" class="conflict-bar" id="conflictBar" hidden></button>
-  <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#log">Log › Ranch &amp; phone setup</a>.</div>
+  <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#settings">Settings › Ranch &amp; phone setup</a>.</div>
 
   <section data-view="herd">
     <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Every animal on the ranch. Search by tag, brand, group or notes.</li><li>Tap a group button to see just that group. Tap an animal to see or change its details.</li><li><b>+ Add animal</b> for a new one. The orange collar symbol <svg class="help-icon" viewBox="0 0 24 30" width="20" height="25" aria-hidden="true"><rect x="8" y="0.8" width="8" height="11" rx="2" fill="var(--strap)" stroke="var(--strap-edge)" stroke-width="0.8"/><circle cx="12" cy="4.2" r="1.4" fill="var(--surface)"/><circle cx="12" cy="19.6" r="9.8" fill="var(--tag)"/><circle cx="12" cy="19.6" r="5.9" fill="var(--strap)"/><rect x="9" y="16.6" width="6" height="6" rx="0.7" fill="var(--panel)"/></svg> means its collar is on.</li><li>Sold animals are hidden. Tick <b>Show sold animals</b> to see them.</li><li><b>New group:</b> tap <b>Manage groups</b>, then <b>+ New group</b>. Type the name, tick the cattle and tap <b>Move</b>. The group is saved once cattle are in it.</li><li><b>Move cattle:</b> tap <b>Select</b>, tick the animals (or type collar numbers like 1-20, 35), then tap <b>Move to group</b>.</li><li><b>Manage groups</b> also adds cattle to a group, renames it, or empties it.</li></ul></details>
@@ -309,11 +339,14 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
     <label class="check small" style="min-height:0"><input id="showSold" type="checkbox" style="width:20px;height:20px"> Show sold animals</label>
     <div class="stats" id="stats"></div>
     <div id="herdList"></div>
-    <div class="selbar" id="selBar" hidden><div class="wrap selbar-in"><div class="selcount" id="selCount">0 selected</div><button type="button" class="btn primary selgo" id="selMove">Move to group</button><button type="button" class="btn" id="selDone">Done</button></div></div>
+    <div class="selbar" id="selBar" hidden><div class="wrap selbar-in"><div class="selcount" id="selCount">0 selected</div><button type="button" class="btn primary selgo" id="selMove">Move to group</button><button type="button" class="btn selgo" id="selTreat">Record treatment</button><button type="button" class="btn" id="selDone">Done</button></div></div>
   </section>
 
-  <section data-view="fit" data-fside="collar" hidden>
-    <div class="fit-top"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2></div>
+  <section data-view="work" data-fside="collar" hidden>
+    <div id="wSetup" hidden></div>
+    <div id="wMain">
+    <div class="fit-top" id="fitTop"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2></div>
+    <div class="card wday" id="wDay" hidden></div>
     <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Pick a collar and an animal, in either order, then tap <b>Fit</b>.</li><li>Pick an animal and its collar from last season is picked for you. Pick a collar and the animal it was last on is picked for you.</li><li>Lost ear tag? Pick <b>Animal not known (lost tag)</b>. Work out which one later on the Collars tab.</li><li>Type the collar number or tap <b>Photo</b> to read it off the collar. It jumps to the top of the list.</li><li>Collars laid out ready? Tap <b>Order collars</b> and type or scan them in the order they’ll go on. Drag a collar by its handle to move it. The next one is picked for you; pick the animal and tap <b>Fit</b>. <b>Skip</b> sends it to the back, <b>Lost</b> takes it out.</li><li>Made a mistake? Tap <b>Undo</b> on the message that pops up.</li></ul></details>
     <div class="fit-sticky">
       <div class="seg fit-switch" id="fitSwitch"><button type="button" data-side="collar" aria-pressed="true">Collars</button><button type="button" data-side="cow" aria-pressed="false">Animals</button></div>
@@ -324,8 +357,10 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
           <div id="fScan"></div><div id="fNotice"></div>
         </div>
         <div class="fit-col" data-side="cow">
-          <div class="inrow"><input id="fcq" class="big-search" type="search" placeholder="Brand, tag or collar #" autocomplete="off"></div>
+          <div class="inrow" id="fcqRow"><input id="fcq" class="big-search" type="search" placeholder="Brand, tag or collar #" autocomplete="off"></div>
+          <div id="fcScan"></div>
           <select id="fGroup"></select>
+          <div class="seg" id="wShow" hidden><button type="button" data-w="todo" aria-pressed="true">To come through</button><button type="button" data-w="done" aria-pressed="false">Done</button></div>
         </div>
       </div>
     </div>
@@ -333,7 +368,8 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
       <div class="fit-col" data-side="collar"><div id="fCollars" class="fit-list"></div></div>
       <div class="fit-col" data-side="cow"><div id="fCows" class="fit-list"></div></div>
     </div>
-    <div class="fitbar" id="fitBar"><div class="wrap fitbar-in"><div id="fitPair" class="fitpair">Pick a collar and an animal</div><button type="button" class="btn primary fitgo" id="fitGo" disabled>Fit</button></div></div>
+    <div class="fitbar" id="fitBar"><div class="wrap"><div id="wPanel" class="wpanel" hidden></div><div class="fitbar-in"><div id="fitPair" class="fitpair">Pick a collar and an animal</div><button type="button" class="btn primary fitgo" id="fitGo" disabled>Fit</button></div></div></div>
+    </div>
   </section>
 
   <section data-view="collars" hidden>
@@ -378,7 +414,8 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
     <div id="moneyBody" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
 
-  <section data-view="log" hidden>
+  <section data-view="settings" hidden>
+    <h2 class="settings-h">Settings</h2>
     <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li>In more than one ranch? Tap the ranch name to switch. Each ranch keeps its own copy on this phone.</li><li><b>Swap with nearby phone</b> passes changes between phones when there’s no signal.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
     <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">

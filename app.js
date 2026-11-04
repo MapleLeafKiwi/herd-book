@@ -1,6 +1,6 @@
 // Herd Book — offline-first cattle tracker. Data lives on the phone and syncs to a Google Sheet when there is signal.
 (() => {
-// Paste the Google Apps Script web app URL here (or enter it in Log › Phone setup).
+// Paste the Google Apps Script web app URL here (or enter it in Settings › Phone setup).
 const SYNC_URL = window.HERDBOOK_SYNC_URL || '';
 
 const $ = s => document.querySelector(s);
@@ -267,11 +267,12 @@ function matches(a, q){
 // ---------- tabs ----------
 function setTab(){
   const t = (location.hash||'#herd').slice(1);
-  S.tab = t==='bulls' ? 'breeding' : t==='yard' ? 'fit' : ['herd','fit','collars','breeding','health','money','log'].includes(t) ? t : 'herd';
+  S.tab = t==='bulls' ? 'breeding' : t==='yard' ? 'fit' : t==='log' ? 'settings' : ['herd','work','fit','collars','breeding','health','money','settings'].includes(t) ? t : 'herd';
   if(S.tab==='money' && !fin()) S.tab='herd';
   $('#navMoney').hidden = !fin();
   document.querySelectorAll('nav a').forEach(a=>{ const on = a.dataset.tab===(S.tab==='fit'?'collars':S.tab); a.setAttribute('aria-current', on?'page':'false'); if(on) a.scrollIntoView({block:'nearest',inline:'nearest'}); });
-  document.querySelectorAll('section[data-view]').forEach(s=>s.hidden = s.dataset.view!==S.tab);
+  $('#gearBtn').setAttribute('aria-current', S.tab==='settings'?'page':'false');
+  document.querySelectorAll('section[data-view]').forEach(s=>s.hidden = s.dataset.view!==(S.tab==='fit'?'work':S.tab));
   renderAll();
 }
 window.addEventListener('hashchange', setTab);
@@ -294,7 +295,7 @@ function renderHerd(){
   const q = $('#q').value.trim();
   const rows = inGroup.filter(a=>matches(a,q)).sort(byTag);
   const el = $('#herdList');
-  if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from the Log tab.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Log › Phone setup.':''}</div>`; return; }
+  if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from Settings.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Settings › Ranch & phone setup.':''}</div>`; return; }
   renderSel();
   if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group==='__none'?'No group':S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
   S.shown = rows.map(a=>a.id);
@@ -355,8 +356,10 @@ function renderSel(){
   const n=S.sel.ids.size; $('#selCount').textContent=`${n} selected`;
   $('#selMove').textContent = S.sel.target!=null ? `Move to ${gName(S.sel.target)}` : 'Move to group';
   $('#selMove').disabled = !n;
+  $('#selTreat').disabled = !n; $('#selTreat').hidden = S.sel.target!=null;
 }
 $('#selBtn').addEventListener('click', ()=>enterSelect(null));
+$('#selTreat').addEventListener('click', ()=>{ if(!S.sel || !S.sel.ids.size) return; const ids=[...S.sel.ids]; leaveSelect(); openTreatment(null, ids); });
 $('#selDone').addEventListener('click', leaveSelect);
 $('#selAll').addEventListener('click', ()=>{ (S.shown||[]).forEach(id=>S.sel.ids.add(id)); renderHerd(); });
 $('#selClear').addEventListener('click', ()=>{ S.sel.ids.clear(); $('#selRangeMsg').innerHTML=''; renderHerd(); });
@@ -904,7 +907,7 @@ function switchTo(code, ranchName){
   remember(); LS.set(K.cfg,cfg); lastErr='';
   // Records kept on a phone with no ranch go with it to the first ranch it joins.
   if(fromNone && LS.get(K.mirror,null)===null){ LS.set(K.mirror,mirror); LS.set(K.outbox,outbox); LS.set(K.conflicts,conflicts); }
-  loadRanchData();
+  loadRanchData(); loadDay(); S.fCow=''; S.wp=null;
   recompute(); setTab(); renderSetup(); renderConflictBar();
   return '';
 }
@@ -1008,6 +1011,7 @@ function openAnimal(id){
       <div id="a-histlist" hidden></div>
     </div>
     ${(()=>{ if(a.kind==='bull'||a.kind==='steer') return ''; const b=breedingFor(a); return `<div class="card"><b>Breeding</b>${b?`<div><span class="pill ${BSTATUS[b.status][1]}">${BSTATUS[b.status][0]}</span> ${b.from&&b.status!=='calved'&&b.status!=='open'?`Due ${esc(fmtDate(b.from))} – ${esc(fmtDate(b.to))}`:''}</div>`:'<div class="small muted">Nothing recorded.</div>'}<div class="bar"><button type="button" class="btn" data-goto="breed">Breeding details</button></div></div>`; })()}
+    ${a.weight!==''&&a.weight!=null&&id?`<div class="card"><b>Latest weight</b><div style="font-size:20px;font-weight:700">${esc(Number(a.weight).toLocaleString())} lb</div><div class="small muted">Weighed ${esc(fmtDate(a.weighedAt))}</div></div>`:''}
     <div class="card"><b>Health</b>${(()=>{ const ts=treatmentsFor(id), w=withdrawalUntil(id); return (w?`<div class="notice warn">On withdrawal until ${esc(fmtDate(w))}</div>`:'')+(ts.length?ts.slice(0,8).map(t=>`<div class="exp"><span>${esc(t.product)}${t.dose?' · '+esc(t.dose):''}</span><span class="muted">${esc(fmtDate(t.date))}</span></div>`).join(''):'<div class="small muted">No treatments recorded.</div>'); })()}
       <div class="bar"><button type="button" class="btn" data-goto="treat">Record treatment</button></div></div>
     <div class="card"><b>${a.kind==='bull'?'Cows he has been with':'Bulls she has been with'}</b>
@@ -1164,12 +1168,19 @@ const yearOf = d => d ? String(d).slice(0,4) : '';
 const pct = (a, b) => b ? (a/b*100) : null;
 const fmtPct = p => p==null ? '—' : (p>0?'+':'')+p.toFixed(1)+'%';
 function animalPicker(id, list, checked){
-  return `<input id="${id}-filter" type="search" placeholder="Filter by tag, brand or group">
-    <div class="picklist" id="${id}" style="margin-top:8px">${list.sort(byTag).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group,c.vid,KIND[c.kind]].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${checked&&checked.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>`;
+  return `<div class="inrow"><input id="${id}-filter" type="search" placeholder="Filter by tag, brand, collar or group"></div>
+    <div class="fab-row" style="margin-top:8px"><button type="button" class="btn" data-pickall="${id}">Select all shown</button><button type="button" class="btn" data-pickclear="${id}">Clear</button></div>
+    <div class="picklist bigticks" id="${id}" style="margin-top:8px">${list.sort(byTag).map(c=>`<label data-s="${esc([c.vid,c.collar,c.brand1,c.brand2,c.group,KIND[c.kind]].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${checked&&checked.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>
+    <div class="small muted" id="${id}-n"></div>`;
 }
 function wirePicker(id){
-  const f=$('#'+id+'-filter'); f && f.addEventListener('input', e=>{ const q=e.target.value.toLowerCase().trim(); document.querySelectorAll('#'+id+' label').forEach(l=>l.hidden = !!q && !l.dataset.s.includes(q)); });
-  return () => [...document.querySelectorAll('#'+id+' input:checked')].map(i=>i.value);
+  const box=$('#'+id), n=()=>{ const el=$('#'+id+'-n'); if(el) el.textContent=`${box.querySelectorAll('input:checked').length} ticked`; };
+  const f=$('#'+id+'-filter'); f && f.addEventListener('input', e=>{ const q=e.target.value.toLowerCase().trim(); box.querySelectorAll('label').forEach(l=>l.hidden = !!q && !l.dataset.s.includes(q)); });
+  const all=document.querySelector(`[data-pickall="${id}"]`), clr=document.querySelector(`[data-pickclear="${id}"]`);
+  all && all.addEventListener('click', ()=>{ box.querySelectorAll('label:not([hidden]) input').forEach(i=>i.checked=true); box.dispatchEvent(new Event('change')); n(); });
+  clr && clr.addEventListener('click', ()=>{ box.querySelectorAll('input').forEach(i=>i.checked=false); box.dispatchEvent(new Event('change')); n(); });
+  box.addEventListener('change', n); n();
+  return () => [...box.querySelectorAll('input:checked')].map(i=>i.value);
 }
 
 // ---------- health: vaccines & medicines ----------
@@ -1206,29 +1217,44 @@ function renderHealth(){
     : !list.length ? `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”.</div>`
     : `<div class="list">${list.map(treatmentCard).join('')}</div>`;
 }
+// Product fields, shared by Record treatment and the Work Cattle day setup. p is the id prefix.
+const productNames = () => [...new Set(treatments().map(x=>x.product).filter(Boolean))];
+function treatFields(p, t, withDate){
+  return `<div class="grid2">
+    <label class="f">Product<input id="${p}-product" type="text" list="${p}-products" value="${esc(t.product||'')}" placeholder="e.g. Bovi-Shield Gold"><datalist id="${p}-products">${productNames().map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+    <label class="f">Type<select id="${p}-kind">${Object.entries(TTYPE).map(([k,v])=>`<option value="${k}" ${t.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    ${withDate?`<label class="f">Date given<input id="${p}-date" type="date" value="${esc(t.date||today())}"></label>`:''}
+    <label class="f">Dose<input id="${p}-dose" type="text" value="${esc(t.dose||'')}" placeholder="e.g. 2 mL"></label>
+    <label class="f">Route<input id="${p}-route" type="text" list="${p}-routes" value="${esc(t.route||'')}"><datalist id="${p}-routes">${ROUTES.map(r=>`<option value="${esc(r)}">`).join('')}</datalist></label>
+    <label class="f">Withdrawal (days)<input id="${p}-wd" type="text" inputmode="numeric" value="${esc(t.withdrawalDays??'')}" placeholder="0 if none"></label>
+    <label class="f">Booster due (optional)<input id="${p}-boost" type="date" value="${esc(t.boosterDue||'')}"></label>
+    <label class="f">Batch / lot<input id="${p}-batch" type="text" value="${esc(t.batch||'')}"></label>
+    <label class="f">Given by<input id="${p}-by" type="text" value="${esc(t.givenBy||'')}"></label>
+    ${fin()?`<label class="f">Cost ($, optional)<input id="${p}-cost" type="text" inputmode="decimal" value="${esc(t.cost??'')}"></label>`:''}
+  </div>`;
+}
+// Read the product fields back; returns {rec} or {err}. Cost only on full-access phones.
+function readTreat(p){
+  const v=k=>{ const el=$('#'+p+'-'+k); return el?el.value.trim():''; };
+  if(!v('product')) return {err:'Enter the product name.'};
+  const wd=v('wd'); if(wd && isNaN(Number(wd))) return {err:'Withdrawal should be a number of days.'};
+  const rec={ product:v('product'), kind:$('#'+p+'-kind').value, dose:v('dose'), route:v('route'), withdrawalDays: wd===''?'':Number(wd), boosterDue:v('boost'), batch:v('batch'), givenBy:v('by') };
+  if($('#'+p+'-date')) rec.date=v('date')||today();
+  if(fin()){ const c=parseMoney(v('cost')); if(c===null) return {err:'Cost should be a number.'}; rec.cost=c; }
+  return {rec};
+}
 function openTreatment(id, presetIds){
   const t = id ? S.treatments.get(id) : {date:today(), kind:'vaccine', animalIds:presetIds||[], givenBy:me()};
   if(id && !t) return;
-  const products=[...new Set(treatments().map(x=>x.product).filter(Boolean))];
   const g=groups(); let mode = (t.animalIds||[]).length ? 'pick' : 'group';
+  const tg = new Set(String(t.group||'').split(', ').filter(Boolean));
   openSheet(`<div class="sheet-h"><h2>${id?'Treatment':'Record treatment'}</h2><button class="x" type="button" aria-label="Close">×</button></div>
     <form id="tf" class="card" autocomplete="off">
-      <div class="grid2">
-        <label class="f">Product<input id="t-product" type="text" list="t-products" value="${esc(t.product||'')}" placeholder="e.g. Bovi-Shield Gold"><datalist id="t-products">${products.map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label>
-        <label class="f">Type<select id="t-kind">${Object.entries(TTYPE).map(([k,v])=>`<option value="${k}" ${t.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
-        <label class="f">Date given<input id="t-date" type="date" value="${esc(t.date||today())}"></label>
-        <label class="f">Dose<input id="t-dose" type="text" value="${esc(t.dose||'')}" placeholder="e.g. 2 mL"></label>
-        <label class="f">Route<input id="t-route" type="text" list="t-routes" value="${esc(t.route||'')}"><datalist id="t-routes">${ROUTES.map(r=>`<option value="${esc(r)}">`).join('')}</datalist></label>
-        <label class="f">Withdrawal (days)<input id="t-wd" type="text" inputmode="numeric" value="${esc(t.withdrawalDays??'')}" placeholder="0 if none"></label>
-        <label class="f">Booster due (optional)<input id="t-boost" type="date" value="${esc(t.boosterDue||'')}"></label>
-        <label class="f">Batch / lot<input id="t-batch" type="text" value="${esc(t.batch||'')}"></label>
-        <label class="f">Given by<input id="t-by" type="text" value="${esc(t.givenBy||'')}"></label>
-        ${fin()?`<label class="f">Cost ($, optional)<input id="t-cost" type="text" inputmode="decimal" value="${esc(t.cost??'')}"></label>`:''}
-      </div>
+      ${treatFields('t', t, true)}
       <div class="small muted" id="t-wdnote"></div>
       <b>Given to</b>
       <div class="seg" id="t-mode"><button type="button" data-m="group" aria-pressed="${mode==='group'}">Whole group</button><button type="button" data-m="pick" aria-pressed="${mode==='pick'}">Pick animals</button></div>
-      <div id="t-groupbox" ${mode!=='group'?'hidden':''}><label class="f">Group<select id="t-group">${g.map(x=>`<option ${x===t.group?'selected':''}>${esc(x)}</option>`).join('')||'<option value="">No groups yet</option>'}</select></label></div>
+      <div id="t-groupbox" ${mode!=='group'?'hidden':''}><div class="f">Groups (tick one or more)</div><div class="picklist" id="t-groups">${g.map(x=>`<label><input type="checkbox" value="${esc(x)}" ${tg.has(x)?'checked':''}> <span>${esc(x)} <span class="muted small">${onHand().filter(a=>a.group===x).length} on hand</span></span></label>`).join('')||'<div class="small muted" style="padding:8px">No groups yet.</div>'}</div></div>
       <div id="t-pickbox" ${mode!=='pick'?'hidden':''}>${animalPicker('t-pick', onHand(), t.animalIds)}</div>
       <div class="small muted" id="t-count"></div>
       <label class="f">Notes<textarea id="t-notes">${esc(t.notes||'')}</textarea></label>
@@ -1236,26 +1262,23 @@ function openTreatment(id, presetIds){
       <div class="bar"><button class="btn primary" type="submit" style="flex:1">${id?'Save changes':'Save treatment'}</button>${id?'<button class="btn danger" type="button" id="t-del">Delete</button>':''}</div>
     </form>`);
   const picked = wirePicker('t-pick');
-  const ids = () => mode==='group' ? onHand().filter(a=>a.group && a.group===$('#t-group').value).map(a=>a.id) : picked();
+  const tGroups = () => [...document.querySelectorAll('#t-groups input:checked')].map(i=>i.value);
+  const ids = () => mode==='group' ? onHand().filter(a=>a.group && tGroups().includes(a.group)).map(a=>a.id) : picked();
   const count = () => { $('#t-count').textContent = `${ids().length} head will get this treatment.`;
     const wd=Number($('#t-wd').value)||0; $('#t-wdnote').textContent = wd>0 ? `Withdrawal ends ${fmtDate(addDays($('#t-date').value||today(), wd))}.` : ''; };
   $('#t-mode').addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m; $('#t-mode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); $('#t-groupbox').hidden=mode!=='group'; $('#t-pickbox').hidden=mode!=='pick'; count(); });
-  ['#t-group','#t-pick','#t-wd','#t-date'].forEach(s=>{ const el=$(s); el && el.addEventListener(s==='#t-wd'?'input':'change', count); });
+  ['#t-groups','#t-pick','#t-wd','#t-date'].forEach(s=>{ const el=$(s); el && el.addEventListener(s==='#t-wd'?'input':'change', count); });
+  $('#t-pickbox').addEventListener('click', ()=>setTimeout(count));
   count();
   const del=$('#t-del');
   del && del.addEventListener('click', ()=>{ if(!del.classList.contains('armed')){ del.classList.add('armed'); del.textContent='Tap again to delete'; return; }
     remove('treatments/'+id); logChange(id,'treatment',`${t.product} (${(t.animalIds||[]).length} head)`,'deleted',[]); closeSheet(); toast('Treatment deleted'); });
   $('#tf').addEventListener('submit', e=>{
     e.preventDefault();
-    const list=ids(); const cost=fin()?parseMoney($('#t-cost').value):undefined;
-    if(!$('#t-product').value.trim()){ $('#t-warn').innerHTML='<div class="notice warn">Enter the product name.</div>'; return; }
+    const list=ids(); const r=readTreat('t');
+    if(r.err){ $('#t-warn').innerHTML=`<div class="notice warn">${esc(r.err)}</div>`; return; }
     if(!list.length){ $('#t-warn').innerHTML='<div class="notice warn">Choose who got it.</div>'; return; }
-    if(cost===null){ $('#t-warn').innerHTML='<div class="notice warn">Cost should be a number.</div>'; return; }
-    const wd=$('#t-wd').value.trim(); if(wd && isNaN(Number(wd))){ $('#t-warn').innerHTML='<div class="notice warn">Withdrawal should be a number of days.</div>'; return; }
-    const rec={ product:$('#t-product').value.trim(), kind:$('#t-kind').value, date:$('#t-date').value||today(), dose:$('#t-dose').value.trim(), route:$('#t-route').value.trim(),
-      withdrawalDays: wd===''?'':Number(wd), boosterDue:$('#t-boost').value, batch:$('#t-batch').value.trim(), givenBy:$('#t-by').value.trim(),
-      animalIds:list, group: mode==='group'?$('#t-group').value:'', notes:$('#t-notes').value.trim(), updatedAt:Date.now(), updatedBy:me() };
-    if(fin()) rec.cost=cost;
+    const rec={ ...r.rec, animalIds:list, group: mode==='group'?tGroups().join(', '):'', notes:$('#t-notes').value.trim(), updatedAt:Date.now(), updatedBy:me() };
     if(id){ patch('treatments/'+id, rec); logChange(id,'treatment',`${rec.product} (${list.length} head)`,'edited',[]); }
     else { const nid=rid(); put('treatments/'+nid, rec); logChange(nid,'treatment',`${rec.product} given to ${list.length} head${rec.group?' in '+rec.group:''}`,'added',[]); }
     closeSheet(); toast(id?'Saved':`Recorded for ${list.length} head`);
@@ -1625,7 +1648,7 @@ function openExport(){
     const hi=rows.findIndex(r=>r.some(c=>/^\s*neck\s*band\s*$/i.test(String(c))));
     if(hi<0){ msg('<span class="warn-text">No “Neckband” column found. Is this the eShepherd Bulk Create file?</span>'); return; }
     const head=rows[hi].map(c=>String(c).trim()); const col=re=>head.findIndex(h=>re.test(h));
-    const c={action:col(/^action$/i), aid:col(/^animal\s*id$/i), nb:col(/^neck\s*band$/i), eid:col(/^eid/i), vid:col(/^vid/i), breed:col(/^breed$/i), cls:col(/stock\s*class/i), dob:col(/birth/i), brand:col(/tattoo|brand/i), preg:col(/pregnan/i), note:col(/^note/i)};
+    const c={action:col(/^action$/i), aid:col(/^animal\s*id$/i), nb:col(/^neck\s*band$/i), eid:col(/^eid/i), vid:col(/^vid/i), breed:col(/^breed$/i), cls:col(/stock\s*class/i), dob:col(/birth/i), brand:col(/tattoo|brand/i), wt:col(/^weight/i), wd:col(/weighed/i), preg:col(/pregnan/i), note:col(/^note/i)};
     const vidFrom=$('#ex-vid').value, noteFrom=$('#ex-note').value;
     const setStr=(r,ci,v)=>{ if(ci<0) return; const ref=X.utils.encode_cell({r,c:ci}); if(v===''||v==null){ delete ws[ref]; return; } ws[ref]={t:'s', v:String(v)}; };
     const setDate=(r,ci,iso)=>{ if(ci<0||!iso) return; const ref=X.utils.encode_cell({r,c:ci}); const d=new Date(iso+'T00:00:00Z'); ws[ref]={t:'n', v:(d - Date.UTC(1899,11,30))/86400000, z:'dd-mm-yyyy'}; };
@@ -1643,6 +1666,7 @@ function openExport(){
       setStr(r,c.cls, KIND[a.kind]||'Cow');
       if(a.birthDate) setDate(r,c.dob, a.birthDate);
       const br=[a.brand1,a.brand2].filter(Boolean).join(' / ').slice(0,50); if(br) setStr(r,c.brand, br);
+      if(a.weight!==''&&a.weight!=null&&!isNaN(Number(a.weight))){ const ref=X.utils.encode_cell({r,c:c.wt}); if(c.wt>=0) ws[ref]={t:'n', v:Number(a.weight)}; if(a.weighedAt) setDate(r,c.wd, a.weighedAt); }
       const pg=esPreg(a); if(pg) setStr(r,c.preg, pg);
       if(noteFrom!=='keep'){ const nv=String(noteFrom==='group'?a.group||'':a.notes||'').slice(0,300); if(nv) setStr(r,c.note, nv); }
       filled++;
@@ -1754,11 +1778,16 @@ function fitCollars(){
   return list;
 }
 function renderFit(){
-  const sec=$('section[data-view="fit"]'); sec.dataset.fside=S.fSide;
+  const J=jobsNow(), multi=multiJob(J), collarJob=!!J.collar;
+  const sec=$('section[data-view="work"]');
+  sec.dataset.nocollar = collarJob ? '' : '1';
+  if(!collarJob){ S.fSide='cow'; S.fCollar=''; S.fAuto=false; }
+  sec.dataset.fside=S.fSide;
   document.querySelectorAll('#fitSwitch button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.side===S.fSide));
   const hh=document.querySelector('header'); if(hh) document.documentElement.style.setProperty('--headh', hh.offsetHeight+'px');
   // a picked cow or collar that is no longer available drops out
-  if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || !needsCollar(a)) S.fCow=''; }
+  if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || isSold(a) || (!multi && !needsCollar(a))){ S.fCow=''; S.wp=null; } }
+  if(S.fCow==='unknown' && !collarJob) S.fCow='';
   if(S.fCollar){ const c=collarFor(S.fCollar); if(c && c.status==='lost') S.fCollar=''; }
   const qRaw=$('#fq').value.trim(), q=ckey(qRaw);
   // with a collar order, the next collar in line is picked ready to use
@@ -1793,20 +1822,40 @@ function renderFit(){
   $('#fCollars').innerHTML = cl.length ? cl.slice(0,150).map(x=>`<button type="button" class="fpick" data-num="${esc(x.num)}" aria-pressed="${ckey(S.fCollar)===ckey(x.num)}">${collarHtml({collar:x.num})}<span class="main">${x.last?`<span class="sub">Last on: ${esc(cowName(x.last))}</span>`:'<span class="sub">Ready to fit</span>'}</span></button>`).join('')
     : (notice ? '' : `<div class="empty"><strong>${q?'No collar matches':'No collars ready to fit'}</strong>${q?'Check the number, or try a photo.':'Add collars on the Collars tab, or type a new number above.'}</div>`);
   // cow side
-  const g=groups(); if(S.fGroup && !g.includes(S.fGroup)) S.fGroup='';
-  $('#fGroup').innerHTML = `<option value="">All groups</option>` + g.map(x=>`<option ${x===S.fGroup?'selected':''}>${esc(x)}</option>`).join('');
+  const dg=dayGroups(), g=dg.length?dg:groups(); if(S.fGroup && !g.includes(S.fGroup)) S.fGroup='';
+  $('#fGroup').innerHTML = `<option value="">${dg.length?'All chosen groups':'All groups'}</option>` + g.map(x=>`<option ${x===S.fGroup?'selected':''}>${esc(x)}</option>`).join('');
+  const inG = a => S.fGroup ? a.group===S.fGroup : (!dg.length || dg.includes(a.group));
   const cq=$('#fcq').value.trim();
-  let cows=onHand().filter(needsCollar).filter(a=>!S.fGroup || a.group===S.fGroup).filter(a=>matches(a,cq)).sort(byTag);
+  $('#wShow').hidden=!multi; const pl=$('#fcq-photo-l'); if(pl) pl.hidden=!multi;
+  if(multi) document.querySelectorAll('#wShow button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.w===(S.wShow||'todo')));
+  let cows = !multi ? onHand().filter(needsCollar).filter(inG).filter(a=>matches(a,cq)).sort(byTag)
+    : onHand().filter(inG).filter(a=>(S.wShow==='done')===workedToday(a)).filter(a=>matchesW(a,cq)).sort(byTag);
   const ex=cq && cows.find(a=>ckey(a.collar)===ckey(cq)); if(ex) cows=[ex, ...cows.filter(a=>a!==ex)];
-  const unkBtn = `<button type="button" class="fpick unk" data-cow="unknown" aria-pressed="${S.fCow==='unknown'}"><span class="aid none">?</span><span class="main"><b>Animal not known (lost tag)</b><span class="sub">Fit now, work out which one later</span></span></button>`;
+  const unkBtn = !collarJob || S.wShow==='done' ? '' : `<button type="button" class="fpick unk" data-cow="unknown" aria-pressed="${S.fCow==='unknown'}"><span class="aid none">?</span><span class="main"><b>Animal not known (lost tag)</b><span class="sub">Fit now, work out which one later</span></span></button>`;
+  const newBtn = multi && S.wShow!=='done' ? `<button type="button" class="fpick unk" data-newhere="1"><span class="aid none">+</span><span class="main"><b>+ New animal here</b><span class="sub">Not in the book yet, such as an unrecorded calf</span></span></button>` : '';
+  const wCard = a => { const dam=damOf(a), w=withdrawalUntil(a.id);
+    return `<button type="button" class="fpick" data-cow="${esc(a.id)}" aria-pressed="${S.fCow===a.id}">${idBox(a)}<span class="main"><span>${brandsHtml(a)||'<span class="muted">No brand</span>'}${fittedIcon(a)} <span class="sub">${esc(kindName(a))} · ${esc(a.group||'No group')}</span></span>${dam?`<span class="sub">Calf of ${esc(cowName(dam))}${dam.collar?' · collar '+esc(dam.collar):''}</span>`:''}${a.collar?`<span class="sub">${a.collarOn?'Collar':'Last collar'}: ${esc(a.collar)}</span>`:''}${J.ai&&!female(a)?'<span class="sub">No AI: not a cow or heifer</span>':''}${w?`<span class="pill warn">Withdrawal</span>`:''}${workedToday(a)?'<span class="pill ok">Done today</span>':''}</span></button>`; };
+  if(multi){ $('#fCows').innerHTML = newBtn + unkBtn + (cows.length ? cows.slice(0,200).map(wCard).join('') : `<div class="empty"><strong>${S.wShow==='done'?'None done yet':cq||S.fGroup?'No animals match':'Everyone has been through'}</strong>${S.wShow==='done'?'Animals show here once they’re done.':cq||S.fGroup?'Try another brand, tag or collar.':'Tap Finish when you’re done for the day.'}</div>`); } else
   $('#fCows').innerHTML = unkBtn + (cows.length ? cows.slice(0,150).map(a=>`<button type="button" class="fpick" data-cow="${esc(a.id)}" aria-pressed="${S.fCow===a.id}">${idBox(a)}<span class="main"><span>${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="sub">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</span></span>${a.collar?`<span class="sub">Last collar: ${esc(a.collar)}</span>`:''}</span></button>`).join('')
     : `<div class="empty"><strong>${cq||S.fGroup?'No animals match':'Every animal has a collar on'}</strong>${cq||S.fGroup?'Try another brand, tag or group.':'Nothing left to fit.'}</div>`);
-  const nC=fitCollars().length, nW=onHand().filter(needsCollar).length;
+  const nC=fitCollars().length, nW=multi ? onHand().filter(inG).filter(a=>!workedToday(a)).length : onHand().filter(needsCollar).length;
   const sw=$('#fitSwitch'); sw.querySelector('[data-side=collar]').textContent=`Collars · ${nC}`; sw.querySelector('[data-side=cow]').textContent=`Animals · ${nW}`;
   // bottom bar
   const cow=S.fCow==='unknown' ? {unknown:true} : S.fCow && S.animals.get(S.fCow);
   $('#fitPair').innerHTML = S.fCollar||cow ? `${S.fCollar?`Collar ${esc(S.fCollar)}`:'<span class="muted">Pick a collar</span>'} → ${cow?(cow.unknown?'animal not known':esc(cowName(cow))):'<span class="muted">pick an animal</span>'}` : '<span class="muted">Pick a collar and an animal</span>';
   $('#fitGo').disabled = !(S.fCollar && cow);
+  $('#fitGo').textContent = multi ? 'Done' : 'Fit';
+  if(multi){
+    const a = cow && !cow.unknown ? cow : null;
+    if(a && (!S.wp || S.wp.id!==a.id)) initPanel(a);
+    if(!a) S.wp=null;
+    renderPanel(a);
+    if(cow && cow.unknown) $('#wPanel').innerHTML='<div class="small muted">Animal not known: only the collar is fitted. Work out which one later on the Collars tab.</div>', $('#wPanel').hidden=false;
+    if(a) $('#fitPair').innerHTML = `${S.fCollar&&S.wp&&S.wp.ticks.collar?`Collar ${esc(S.fCollar)} → `:''}${esc(cowName(a))}`;
+    else if(!cow) $('#fitPair').innerHTML = collarJob ? ($('#fitPair').innerHTML) : '<span class="muted">Pick an animal</span>';
+    $('#fitGo').disabled = !(a || (cow && cow.unknown && S.fCollar));
+  } else { $('#wPanel').hidden=true; S.wp=null; }
+  padBar();
 }
 const ordinal = n => n+(n%100>=11&&n%100<=13?'th':['th','st','nd','rd'][n%10]||'th');
 function pickCollar(num){
@@ -1818,11 +1867,12 @@ function pickCollar(num){
   renderFit();
 }
 function pickCow(id){
-  if(S.fCow===id){ S.fCow=''; renderFit(); return; }
+  if(S.fCow===id){ S.fCow=''; S.wp=null; renderFit(); return; }
   S.fCow=id; const a=S.animals.get(id);
   // the animal's collar from last season, if it's free
-  if(!S.fCollar && !orderOn() && a && a.collar && fitFree(a.collar, a.id)) S.fCollar=a.collar;
-  if(!S.fCollar && S.fSide==='cow' && window.matchMedia('(max-width:699px)').matches) S.fSide='collar';
+  if(!S.fCollar && !orderOn() && a && a.collar && !a.collarOn && fitFree(a.collar, a.id)) S.fCollar=a.collar;
+  const J=jobsNow(); S.wp=null;
+  if(!S.fCollar && J.collar && S.fSide==='cow' && window.matchMedia('(max-width:699px)').matches && !(multiJob(J) && a && a.collarOn)) S.fSide='collar';
   renderFit();
 }
 // Give the collar to the animal and mark it fitted, in one step. Returns an undo function.
@@ -1851,6 +1901,7 @@ function fitPair(num, cowId){
 }
 $('#fitGo').addEventListener('click', ()=>{
   if(S.fCollar && S.fCow==='unknown') return openFitUnknown(S.fCollar);
+  if(multiJob(jobsNow())) return workDone();
   const num=S.fCollar, cow=S.animals.get(S.fCow); if(!num || !cow) return;
   const undo=fitPair(num, cow.id);
   S.fCollar=''; S.fCow=''; S.fNoAuto=false; $('#fq').value=''; $('#fScan').innerHTML=''; $('#fcq').value='';
@@ -2049,11 +2100,333 @@ function openOrder(){
 }
 $('#ordBtn').addEventListener('click', openOrder);
 $('#fNotice').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
-$('#fCows').addEventListener('click', e=>{ const b=e.target.closest('[data-cow]'); if(b) pickCow(b.dataset.cow); });
+$('#fCows').addEventListener('click', e=>{ if(e.target.closest('[data-newhere]')) return openNewHere(); const b=e.target.closest('[data-cow]'); if(b) pickCow(b.dataset.cow); });
+$('#wShow').addEventListener('click', e=>{ const b=e.target.closest('[data-w]'); if(!b) return; S.wShow=b.dataset.w; S.fCow=''; S.wp=null; renderFit(); });
 $('#fq').addEventListener('input', renderFit);
 $('#fcq').addEventListener('input', renderFit);
 $('#fGroup').addEventListener('change', e=>{ S.fGroup=e.target.value; renderFit(); });
 window.addEventListener('resize', ()=>{ if(S.tab==='fit') renderFit(); });
+
+// ---------- work cattle: set up the day's jobs, then work each animal through the chute ----------
+// The working screen is the fitting screen (renderFit). With only the collar job it behaves exactly as Fit collars;
+// with other jobs the animal side lists who is still to come through and the bottom bar shows every job to tick.
+// The day's setup is kept on this phone (per ranch) until Finish. Each animal is saved as soon as it is done.
+const helpHtml = items => `<details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul>${items.map(x=>`<li>${x}</li>`).join('')}</ul></details>`;
+const dayKey = () => 'herdbook.app.day'+(cfg.code?'@'+cfg.code:'');
+let day = null;
+function loadDay(){ day = LS.get(dayKey(), null); }
+const saveDay = () => LS.set(dayKey(), day);
+loadDay();
+if(!cfg.phoneId){ cfg.phoneId=rid().slice(-6); LS.set(K.cfg,cfg); }
+const JOBS = [['collar','Fit collars'],['treat','Treatment'],['preg','Preg check'],['brand','Branding'],['tag','Ear tag'],['weigh','Weigh'],['ai','AI breeding'],['castrate','Castrate'],['move','Move to group'],['note','Note'],['custom','Custom job']];
+const jobsNow = () => S.tab==='fit' ? {collar:true} : (day ? day.jobs : {});
+const multiJob = J => Object.entries(J||{}).some(([k,v])=>k!=='collar' && (Array.isArray(v) ? v.length>0 : !!v));
+const dayGroups = () => S.tab==='fit' || !day ? [] : (day.groups||[]);
+const female = a => a.kind==='cow' || a.kind==='heifer';
+// An animal is done when it went through for this same set of jobs on this date. Two phones set up with the same jobs
+// share the list; a second, different day on the same date starts fresh (earlier work shows as a warning).
+const hashStr = t => { let h=5381; for(const ch of String(t)) h=((h<<5)+h+ch.charCodeAt(0))|0; return (h>>>0).toString(36); };
+const daySig = () => day ? day.date+'|'+hashStr(jobList(day.jobs).join('|').toLowerCase()) : '';
+const workedToday = a => !!(day && a.workedKey===daySig());
+const kindName = a => KIND[a.kind]||'Cow';
+const damOf = a => a && a.damId ? S.animals.get(a.damId) : null;
+// search that also finds a calf by its mother's collar, brand or tag
+const matchesW = (a, q) => matches(a,q) || (a.kind==='calf' && !!damOf(a) && matches(damOf(a), q));
+const slug = s => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,20);
+
+function renderWork(){
+  const inWork = S.tab==='work';
+  const setup = inWork && (!day || S.wEditing);
+  $('#wSetup').hidden = !setup; $('#wMain').hidden = setup;
+  if(setup){ renderDaySetup(); return; }
+  $('#fitTop').hidden = inWork; $('#wDay').hidden = !inWork;
+  if(inWork) renderDayBar();
+  renderFit();
+}
+function dayPool(){ const g=dayGroups(); return onHand().filter(a=>!g.length || g.includes(a.group)); }
+function jobList(J){
+  const out=[];
+  if(J.collar) out.push('Fit collars');
+  (J.treat||[]).forEach(t=>out.push(t.product));
+  if(J.preg) out.push('Preg check'); if(J.brand) out.push('Brand '+J.brand); if(J.tag) out.push('Ear tag'); if(J.weigh) out.push('Weigh');
+  if(J.ai) out.push('AI: '+J.ai.sire); if(J.castrate) out.push('Castrate'); if(J.move) out.push('Move to '+gName(J.move.group)); if(J.note) out.push('Note');
+  (J.custom||[]).forEach(c=>out.push(c.name));
+  return out;
+}
+function renderDayBar(){
+  const pool=dayPool(), done=pool.filter(workedToday).length, g=dayGroups();
+  $('#wDay').innerHTML = `<div class="wday-top"><h2>Work Cattle</h2><span class="wprog"><b>${done}</b> of <b>${pool.length}</b> done</span></div>
+    <div class="small">${esc(jobList(day.jobs).join(' · '))}${g.length?` <span class="muted">· ${esc(g.join(', '))}</span>`:''}</div>
+    <div class="fab-row"><button type="button" class="btn" id="wEdit">Change jobs</button><button type="button" class="btn primary" id="wFinish">Finish</button></div>`;
+}
+document.addEventListener('click', e=>{
+  if(e.target.closest('#wEdit')){ S.wEditing=true; S.wDraft=JSON.parse(JSON.stringify(day)); renderWork(); window.scrollTo(0,0); }
+  else if(e.target.closest('#wFinish')) openFinish();
+});
+
+// ---- set up the day ----
+function blankDay(){ return {date:today(), jobs:{collar:false, treat:[], preg:false, brand:'', tag:false, weigh:false, ai:null, castrate:false, move:null, note:false, custom:[]}, groups:[], done:{}}; }
+function readDraft(){
+  const d=S.wDraft, J=d.jobs, on=k=>{ const el=document.querySelector(`#wSetup [data-job="${k}"]`); return !!(el && el.checked); };
+  J.collar=on('collar'); J.preg=on('preg'); J.tag=on('tag'); J.weigh=on('weigh'); J.castrate=on('castrate'); J.note=on('note');
+  J._treat=on('treat'); J._brand=on('brand'); J._ai=on('ai'); J._move=on('move'); J._custom=on('custom');
+  J.treat=(J.treat||[]).map((t,i)=>{ const el=$('#d'+i+'-product'); if(!el) return t; const v=k=>{ const x=$('#d'+i+'-'+k); return x?x.value.trim():''; };
+    const r={ product:v('product'), kind:$('#d'+i+'-kind').value, dose:v('dose'), route:v('route'), withdrawalDays:v('wd'), boosterDue:v('boost'), batch:v('batch'), givenBy:v('by') };
+    if(fin()) r.cost=v('cost'); return r; });
+  J.brandText = ($('#d-brand')||{}).value ?? J.brandText ?? J.brand ?? '';
+  J.aiSire = ($('#d-sire')||{}).value ?? J.aiSire ?? (J.ai?J.ai.sire:''); J.aiDate = ($('#d-aidate')||{}).value || J.aiDate || (J.ai?J.ai.date:today());
+  const mv=$('#d-move'); if(mv){ J.moveSel=mv.value; J.moveNew=$('#d-movenew').value; }
+  J.custom=(J.custom||[]).map((c,i)=>{ const n=$('#dc'+i+'-name'); return n ? {name:n.value.trim(), box:$('#dc'+i+'-box').checked} : c; });
+  d.groups=[...document.querySelectorAll('#d-groups input:checked')].map(i=>i.value);
+}
+function renderDaySetup(){
+  if(!S.wDraft) S.wDraft = blankDay();
+  const d=S.wDraft, J=d.jobs, g=groups(), editing=!!day;
+  if(J._treat==null) J._treat=(J.treat||[]).length>0; if(J._brand==null) J._brand=!!J.brand; if(J._ai==null) J._ai=!!J.ai; if(J._move==null) J._move=!!J.move; if(J._custom==null) J._custom=(J.custom||[]).length>0;
+  if(J._treat && !(J.treat||[]).length) J.treat=[{kind:'vaccine', givenBy:me()}];
+  if(J._custom && !(J.custom||[]).length) J.custom=[{name:'', box:false}];
+  const tick = (k, label, on, body) => `<div class="jobrow"><label class="jobpick"><input type="checkbox" data-job="${k}" ${on?'checked':''}><span>${label}</span></label>${on&&body?`<div class="jobbody">${body}</div>`:''}</div>`;
+  const moveSel = J.moveSel ?? (J.move ? (groups().includes(J.move.group)||J.move.group===''?J.move.group:'__new') : '');
+  $('#wSetup').innerHTML = `<h2>Work Cattle</h2>
+    ${helpHtml(['For working cattle through the chute: tick today’s jobs, pick the groups, then tap <b>Start working</b>.','Pick each animal as it comes through. Every job is ticked to start with: untick anything not done and tap <b>Done</b>.','Each animal is saved as soon as you tap Done, even with no signal.','Tap <b>Finish</b> at the end for a summary. The day stays on this phone until then.'])}
+    <div class="card"><b class="wq">What are you doing today?</b>
+      ${tick('collar','Fit collars',J.collar)}
+      ${tick('treat','Treatment',J._treat, (J.treat||[]).map((t,i)=>`<div class="tprod"><div class="tprod-h"><b>Product ${i+1}</b>${J.treat.length>1?`<button type="button" class="linkbtn" data-rmprod="${i}">Remove</button>`:''}</div>${treatFields('d'+i, t, false)}</div>`).join('')+'<button type="button" class="btn" id="d-addprod">+ Add another product</button>')}
+      ${tick('preg','Preg check',J.preg, '<div class="small muted">Pregnant, Open or Not sure for each cow or heifer.</div>')}
+      ${tick('brand','Branding',J._brand, `<label class="f">Brand being applied<input id="d-brand" type="text" value="${esc(J.brandText??J.brand??'')}"></label>`)}
+      ${tick('tag','Ear tag',J.tag, '<div class="small muted">Visual tag and/or EID for each animal.</div>')}
+      ${tick('weigh','Weigh',J.weigh, '<div class="small muted">A weight in lb for each animal.</div>')}
+      ${tick('ai','AI breeding',J._ai, `<div class="grid2"><label class="f">Sire or semen<input id="d-sire" type="text" value="${esc(J.aiSire??(J.ai?J.ai.sire:''))}"></label><label class="f">Date<input id="d-aidate" type="date" value="${esc(J.aiDate||(J.ai?J.ai.date:today()))}"></label></div>`)}
+      ${tick('castrate','Castrate',J.castrate, '<div class="small muted">Bulls and calves become steers.</div>')}
+      ${tick('move','Move to group',J._move, `<label class="f">Move them to<select id="d-move"><option value="">No group</option>${g.map(x=>`<option ${x===moveSel?'selected':''}>${esc(x)}</option>`).join('')}<option value="__new" ${moveSel==='__new'?'selected':''}>+ New group</option></select></label><input id="d-movenew" type="text" placeholder="New group name" value="${esc(J.moveNew||(J.move&&moveSel==='__new'?J.move.group:''))}" ${moveSel==='__new'?'':'hidden'}>`)}
+      ${tick('note','Note',J.note, '<div class="small muted">A short note for each animal.</div>')}
+      ${tick('custom','Custom job',J._custom, (J.custom||[]).map((c,i)=>`<div class="tprod"><label class="f">Job name<input id="dc${i}-name" type="text" value="${esc(c.name||'')}" placeholder="e.g. Dehorn, Hoof trim, Body condition score"></label><label class="check"><input id="dc${i}-box" type="checkbox" ${c.box?'checked':''}> Has a box to fill in</label>${J.custom.length>1?`<button type="button" class="linkbtn" data-rmcust="${i}">Remove</button>`:''}</div>`).join('')+'<button type="button" class="btn" id="d-addcust">+ Add another custom job</button>')}
+    </div>
+    <div class="card"><b>Which groups? (optional)</b><div class="small muted">Leave them all unticked to work every animal.</div>
+      <div class="picklist bigticks" id="d-groups">${g.map(x=>`<label><input type="checkbox" value="${esc(x)}" ${(d.groups||[]).includes(x)?'checked':''}> <span>${esc(x)} <span class="muted small">${onHand().filter(a=>a.group===x).length} on hand</span></span></label>`).join('')||'<div class="small muted" style="padding:8px">No groups yet.</div>'}</div></div>
+    <div id="d-warn"></div>
+    <div class="fab-row"><button type="button" class="btn primary fitgo" id="d-start">${editing?'Save jobs':'Start working'}</button>${editing?'<button type="button" class="btn" id="d-cancel">Cancel</button>':''}</div>`;
+}
+$('#wSetup').addEventListener('change', e=>{
+  if(e.target.matches('[data-job]')){ readDraft(); renderDaySetup(); return; }
+  if(e.target.id==='d-move'){ $('#d-movenew').hidden = e.target.value!=='__new'; }
+});
+$('#wSetup').addEventListener('click', e=>{
+  const J=()=>S.wDraft.jobs;
+  if(e.target.closest('#d-addprod')){ readDraft(); J().treat.push({kind:'vaccine', givenBy:me()}); renderDaySetup(); return; }
+  const rp=e.target.closest('[data-rmprod]'); if(rp){ readDraft(); J().treat.splice(Number(rp.dataset.rmprod),1); renderDaySetup(); return; }
+  if(e.target.closest('#d-addcust')){ readDraft(); J().custom.push({name:'', box:false}); renderDaySetup(); return; }
+  const rc=e.target.closest('[data-rmcust]'); if(rc){ readDraft(); J().custom.splice(Number(rc.dataset.rmcust),1); renderDaySetup(); return; }
+  if(e.target.closest('#d-cancel')){ S.wEditing=false; S.wDraft=null; renderWork(); return; }
+  if(e.target.closest('#d-start')) startDay();
+});
+function startDay(){
+  readDraft();
+  const d=S.wDraft, J=d.jobs, warn=t=>{ $('#d-warn').innerHTML=`<div class="notice warn">${esc(t)}</div>`; };
+  const jobs={collar:!!J.collar, treat:[], preg:!!J.preg, brand:'', tag:!!J.tag, weigh:!!J.weigh, ai:null, castrate:!!J.castrate, move:null, note:!!J.note, custom:[]};
+  if(J._treat){ for(const t of J.treat){ if(!t.product) return warn('Enter the product name for each treatment.');
+    if(t.withdrawalDays!=='' && t.withdrawalDays!=null && isNaN(Number(t.withdrawalDays))) return warn('Withdrawal should be a number of days.');
+    const r={...t, withdrawalDays: t.withdrawalDays===''||t.withdrawalDays==null?'':Number(t.withdrawalDays)};
+    if(fin()){ const c=parseMoney(t.cost); if(c===null) return warn('Cost should be a number.'); r.cost=c; } else delete r.cost;
+    jobs.treat.push(r); } }
+  if(J._brand){ const b=String(J.brandText||'').trim(); if(!b) return warn('Enter the brand being applied.'); jobs.brand=b; }
+  if(J._ai){ const s=String(J.aiSire||'').trim(); if(!s) return warn('Enter the sire or semen name for AI.'); jobs.ai={sire:s, date:J.aiDate||today()}; }
+  if(J._move){ const sel=J.moveSel??''; const g = sel==='__new' ? canonGroup(J.moveNew) : sel; if(sel==='__new' && !tidyGroup(J.moveNew)) return warn('Type the new group name.'); jobs.move={group:g}; }
+  if(J._custom){ for(const c of J.custom){ if(!c.name) return warn('Give each custom job a name.'); jobs.custom.push({name:c.name, box:!!c.box}); } }
+  if(!jobList(jobs).length) return warn('Tick at least one job.');
+  day = { date: day ? day.date : today(), jobs, groups:d.groups||[], done: day ? day.done : {}, started: day ? day.started : Date.now() };
+  saveDay(); S.wEditing=false; S.wDraft=null; S.fCow=''; S.wp=null; S.fSide = jobs.collar ? 'collar' : 'cow';
+  renderWork(); window.scrollTo(0,0);
+}
+
+// ---- the job panel for the picked animal ----
+function jobKeys(a){
+  const J=jobsNow(), ks=[];
+  if(J.collar) ks.push('collar');
+  (J.treat||[]).forEach((t,i)=>ks.push('t'+i));
+  if(J.preg && female(a)) ks.push('preg');
+  if(J.brand) ks.push('brand'); if(J.tag) ks.push('tag'); if(J.weigh) ks.push('weigh');
+  if(J.ai && female(a)) ks.push('ai');
+  if(J.castrate && (a.kind==='bull' || a.kind==='calf')) ks.push('castrate');
+  if(J.move && (a.group||'')!==J.move.group) ks.push('move');
+  if(J.note) ks.push('note');
+  (J.custom||[]).forEach((c,i)=>ks.push('c'+i));
+  return ks;
+}
+const hasBrand = (a,b) => [a.brand1,a.brand2].some(x=>x && x.trim().toLowerCase()===String(b).trim().toLowerCase());
+function initPanel(a){
+  const prev = day && day.done[a.id];
+  const p={id:a.id, ticks:{}, vals:{}};
+  jobKeys(a).forEach(k=>p.ticks[k]=true);
+  if(p.ticks.collar && a.collarOn) p.ticks.collar=false;
+  if(p.ticks.brand && hasBrand(a, jobsNow().brand)) p.ticks.brand=false;
+  if(prev){ Object.keys(p.ticks).forEach(k=>{ if(k in prev.ticks) p.ticks[k]=prev.ticks[k]; }); Object.assign(p.vals, prev.vals||{}); }
+  S.wp=p;
+}
+function renderPanel(a){
+  const J=jobsNow(), p=S.wp, el=$('#wPanel');
+  if(!a || !p){ el.innerHTML=''; el.hidden=true; return; }
+  el.hidden=false;
+  const tk = (k, label, extra) => `<div class="wjob${p.ticks[k]?' on':''}" data-k="${k}"><button type="button" class="wtick" data-tk="${k}" role="checkbox" aria-checked="${!!p.ticks[k]}" aria-label="${esc(label)}"><span class="tick" aria-hidden="true"></span></button><div class="wjob-main"><div class="wjob-l">${label}</div>${extra||''}</div></div>`;
+  const notes=[], warns=[];
+  if(workedToday(a)) warns.push(`Already done today${day.done[a.id]?'':' on another phone'}.${day.done[a.id]?' Changes here replace what was ticked.':''}`);
+  else if(day && a.lastWorked===day.date) warns.push('Already worked earlier today for other jobs.');
+  const w=withdrawalUntil(a.id); if(w) warns.push(`On withdrawal until ${fmtDate(w)}.`);
+  if(J.collar && a.collarOn) warns.push(`Collar ${a.collar} is already fitted.`);
+  if(J.ai && !female(a)) notes.push('AI breeding is for cows and heifers only.');
+  if(J.preg && !female(a)) notes.push('Preg check is for cows and heifers only.');
+  if(J.move && (a.group||'')===J.move.group) notes.push(`Already in ${gName(J.move.group)}.`);
+  const v=p.vals, rows=[];
+  if('collar' in p.ticks) rows.push(tk('collar', S.fCollar ? `Collar ${esc(S.fCollar)}` : 'Fit collar <span class="muted">(pick a collar)</span>'));
+  (J.treat||[]).forEach((t,i)=>rows.push(tk('t'+i, esc(t.product), `<div class="small muted">${esc([TTYPE[t.kind], t.dose, t.route].filter(Boolean).join(' · '))}</div>`)));
+  if('preg' in p.ticks) rows.push(tk('preg','Preg check', `<div class="seg wseg" data-seg="preg">${['pregnant','open','unsure'].map(r=>`<button type="button" data-r="${r}" aria-pressed="${v.preg===r}">${r==='unsure'?'Not sure':r[0].toUpperCase()+r.slice(1)}</button>`).join('')}</div>`));
+  if('brand' in p.ticks) rows.push(tk('brand', `Brand ${esc(J.brand)}`, hasBrand(a,J.brand) ? `<div class="small warn-text">Already has brand ${esc(J.brand)}. It won’t be added again.</div>` : (a.brand1&&a.brand2 ? `<div class="small muted">Replaces 2nd brand ${esc(a.brand2)}.</div>` : '')));
+  if('tag' in p.ticks){ const ov=a.vid&&v.vid&&v.vid!==a.vid, oe=a.eid&&v.eid&&v.eid!==a.eid;
+    rows.push(tk('tag','Ear tag', `<div class="inrow"><input id="wp-vid" type="text" autocomplete="off" placeholder="Visual tag" value="${esc(v.vid||'')}">${camButton('wp-vphoto')}</div><div id="wp-vscan"></div><input id="wp-eid" type="text" inputmode="numeric" autocomplete="off" placeholder="EID" value="${esc(v.eid||'')}" style="margin-top:6px">
+      ${ov||oe?`<div class="notice warn" style="margin-top:6px">${ov?`Already has tag ${esc(a.vid)}. `:''}${oe?`Already has EID ${esc(a.eid)}. `:''}<label class="check" style="min-height:0"><input type="checkbox" id="wp-tagok" ${v.tagOk?'checked':''}> Replace it</label></div>`:''}`)); }
+  if('weigh' in p.ticks) rows.push(tk('weigh','Weigh', `<div class="inrow"><input id="wp-weight" type="text" inputmode="decimal" autocomplete="off" placeholder="Weight" value="${esc(v.weight||'')}"><span class="unit">lb</span></div>`));
+  if('ai' in p.ticks) rows.push(tk('ai', `AI: ${esc(J.ai.sire)}`, `<div class="small muted">${esc(fmtDate(J.ai.date))}</div>`));
+  if('castrate' in p.ticks) rows.push(tk('castrate','Castrate', '<div class="small muted">Type becomes steer.</div>'));
+  if('move' in p.ticks) rows.push(tk('move', `Move to ${esc(gName(J.move.group))}`));
+  if('note' in p.ticks) rows.push(tk('note','Note', `<input id="wp-note" type="text" autocomplete="off" placeholder="Note" value="${esc(v.note||'')}">`));
+  (J.custom||[]).forEach((c,i)=>rows.push(tk('c'+i, esc(c.name), c.box?`<input id="wp-c${i}" type="text" autocomplete="off" placeholder="${esc(c.name)}" value="${esc(v['c'+i]||'')}">`:'')));
+  const dam=damOf(a);
+  el.innerHTML = `<div class="wp-head"><b>${esc(kindName(a))} ${esc(cowName(a))}</b>${a.group?` <span class="muted">· ${esc(a.group)}</span>`:''}${dam?` <span class="muted">· calf of ${esc(cowName(dam))}</span>`:''}</div>
+    ${warns.map(t=>`<div class="notice warn">${esc(t)}</div>`).join('')}${notes.map(t=>`<div class="small muted">${esc(t)}</div>`).join('')}
+    <div id="wp-err"></div>${rows.join('')}`;
+  if($('#wp-vphoto')) wireScan('#wp-vphoto', '#wp-vscan', n=>{ $('#wp-vid').value=n; S.wp.vals.vid=n; renderPanel(S.animals.get(S.wp.id)); padBar(); });
+}
+$('#wPanel').addEventListener('click', e=>{
+  const p=S.wp; if(!p) return;
+  const t=e.target.closest('[data-tk]'); if(t){ const k=t.dataset.tk; p.ticks[k]=!p.ticks[k]; t.setAttribute('aria-checked', p.ticks[k]); t.closest('.wjob').classList.toggle('on', p.ticks[k]); return; }
+  const r=e.target.closest('[data-seg="preg"] [data-r]'); if(r){ p.vals.preg=r.dataset.r; p.ticks.preg=true; renderPanel(S.animals.get(p.id)); }
+});
+$('#wPanel').addEventListener('input', e=>{
+  const p=S.wp; if(!p) return; const id=e.target.id;
+  const map={'wp-vid':'vid','wp-eid':'eid','wp-weight':'weight','wp-note':'note'};
+  if(map[id]){ p.vals[map[id]]=e.target.value; if(id==='wp-vid'||id==='wp-eid'){ const a=S.animals.get(p.id); const need=(a.vid&&p.vals.vid&&p.vals.vid!==a.vid)||(a.eid&&p.vals.eid&&p.vals.eid!==a.eid); if(!!need!==!!$('#wp-tagok')){ const pos=e.target.selectionStart; renderPanel(a); const el=$('#'+id); el.focus(); try{ el.setSelectionRange(pos,pos); }catch{} padBar(); } } }
+  else if(/^wp-c\d+$/.test(id)) p.vals[id.slice(3)]=e.target.value;
+});
+$('#wPanel').addEventListener('change', e=>{ if(e.target.id==='wp-tagok' && S.wp) S.wp.vals.tagOk=e.target.checked; });
+function padBar(){ const b=$('#fitBar'), s=$('section[data-view="work"]'); if(b && s) s.style.paddingBottom = (b.offsetHeight+24)+'px'; }
+
+// ---- saving one animal ----
+// Undo steps are stored with the animal's entry in the day, so going back to it can reverse them first.
+function revertSteps(steps){
+  if(!steps || !steps.length) return;
+  bulk(()=>{ const t=Date.now();
+    steps.forEach(st=>{
+      if(st[0]==='p') patch(st[1], {...st[2], updatedAt:t, updatedBy:me()});
+      else if(st[0]==='rm') remove(st[1]);
+      else if(st[0]==='arr'){ const [, path, field, val]=st, [col,id]=path.split('/'), rec=S[col] && S[col].get(id); if(rec) patch(path, {[field]:(rec[field]||[]).filter(x=>x!==val), updatedAt:t, updatedBy:me()}); }
+    }); });
+}
+// One record per product (and one AI record) per phone per day: two phones never overwrite each other's animals.
+function addToShared(col, id, field, aid, fresh){
+  const rec=S[col].get(id);
+  if(!rec) put(col+'/'+id, {...fresh(), [field]:[aid]});
+  else if(!(rec[field]||[]).includes(aid)) patch(col+'/'+id, {[field]:(rec[field]||[]).concat(aid), updatedAt:Date.now(), updatedBy:me()});
+  return ['arr', col+'/'+id, field, aid];
+}
+function workDone(){
+  const p=S.wp, J=jobsNow(); if(!p) return;
+  let a=S.animals.get(p.id); if(!a) return;
+  const err=t=>{ $('#wp-err').innerHTML=`<div class="notice warn">${esc(t)}</div>`; $('#wPanel').scrollTop=0; };
+  const T=p.ticks, v=p.vals;
+  if(T.collar && !S.fCollar) return err('Pick a collar, or untick Fit collar.');
+  if(T.preg && !v.preg) return err('Tap the preg result.');
+  const wt = String(v.weight||'').replace(/,/g,'').trim();
+  if(T.weigh && (!wt || isNaN(Number(wt)) || Number(wt)<=0)) return err('Enter the weight in lb, or untick Weigh.');
+  const vid=String(v.vid||'').trim(), eid=String(v.eid||'').trim();
+  if(T.tag && !vid && !eid) return err('Enter the visual tag or EID, or untick Ear tag.');
+  if(T.tag && ((a.vid&&vid&&vid!==a.vid)||(a.eid&&eid&&eid!==a.eid)) && !v.tagOk) return err('This animal already has a different tag. Tick “Replace it” to save the new one.');
+  const custom=(J.custom||[]).map((c,i)=>({c, i})).filter(x=>T['c'+x.i]);
+  // going back to an animal already done on this phone: undo what was saved before, then save again
+  const prev=day.done[a.id]; if(prev){ revertSteps(prev.undo); a=S.animals.get(a.id); }
+  const date=day.date, steps=[], did=[], t=Date.now(), num=S.fCollar;
+  let fitted=false;
+  bulk(()=>{
+    if(T.collar && num){ steps.push(['p','animals/'+a.id,{collar:a.collar||'', collarOn:!!a.collarOn}]); fitPair(num, a.id); fitted=true; did.push('collar '+num); }
+    (J.treat||[]).forEach((tr,i)=>{ if(!T['t'+i]) return;
+      const tid='wc'+date.replace(/-/g,'')+cfg.phoneId+i+slug(tr.product);
+      steps.push(addToShared('treatments', tid, 'animalIds', a.id, ()=>{ const r={...tr, date, group:dayGroups().join(', '), notes:'Work Cattle', updatedAt:t, updatedBy:me()}; if(!fin()) delete r.cost; return r; }));
+      did.push(tr.product); });
+    if(T.preg){ const pid=rid(); put('preg/'+pid, {cowId:a.id, type:'check', date, result:v.preg, daysPregnant:'', notes:'', updatedAt:t, updatedBy:me()}); steps.push(['rm','preg/'+pid]); did.push('preg '+v.preg); }
+    if(T.ai && J.ai){ const xid='wcai'+date.replace(/-/g,'')+cfg.phoneId+slug(J.ai.sire);
+      steps.push(addToShared('exposures', xid, 'cowIds', a.id, ()=>({bullId:'', group:'', start:J.ai.date, end:J.ai.date, note:'AI: '+J.ai.sire, updatedAt:t, updatedBy:me()}))); did.push('AI '+J.ai.sire); }
+    const ap={}, notes=[];
+    if(T.brand && !hasBrand(a,J.brand)){ ap[!a.brand1?'brand1':'brand2']=J.brand; did.push('brand '+J.brand); }
+    if(T.tag){ if(vid) ap.vid=vid; if(eid) ap.eid=eid; did.push('tag '+[vid,eid].filter(Boolean).join(' / ')); }
+    if(T.weigh){ ap.weight=Number(wt); ap.weighedAt=date; did.push(wt+' lb'); }
+    if(T.castrate && (a.kind==='bull'||a.kind==='calf')){ ap.kind='steer'; did.push('castrated'); }
+    if(T.move && J.move && (a.group||'')!==J.move.group){ ap.group=J.move.group; did.push('moved to '+gName(J.move.group)); }
+    if(T.note && String(v.note||'').trim()){ notes.push(String(v.note).trim()); did.push('note'); }
+    custom.forEach(({c,i})=>{ const val=String(v['c'+i]||'').trim(); notes.push(c.name+(val?': '+val:'')); did.push(c.name+(val?' '+val:'')); });
+    if(notes.length) ap.notes = (a.notes ? a.notes+' ' : '') + `${fmtDate(date)}: ${notes.join('; ')}.`;
+    ap.lastWorked=date; ap.workedKey=daySig();
+    const old={}; Object.keys(ap).forEach(k=>old[k]=a[k]??''); steps.push(['p','animals/'+a.id, old]);
+    patch('animals/'+a.id, {...ap, updatedAt:t, updatedBy:me()});
+    logChange(a.id,'animal',label(a),'worked at the chute',[{f:'Jobs', from:'', to:did.join(', ')||'checked'}]);
+  });
+  day.done[a.id]={at:t, ticks:{...T}, vals:{...v}, undo:steps}; saveDay();
+  const name=`${kindName(a)} ${cowName(a)}`;
+  S.fCollar=''; S.fCow=''; S.wp=null; S.fNoAuto=false; S.fAuto=false; $('#fq').value=''; $('#fScan').innerHTML=''; $('#fcq').value=''; $('#fcScan').innerHTML='';
+  if(window.matchMedia('(max-width:699px)').matches) S.fSide='cow';
+  renderWork();
+  toast(`Done: ${name}`, ()=>{ revertSteps(steps); delete day.done[a.id]; saveDay(); renderWork(); toast('Undone'); });
+}
+
+// ---- + New animal here (not in the book yet, such as an unrecorded calf) ----
+function openNewHere(){
+  const dg=dayGroups(), g=groups(), def=dg[0]||'';
+  openSheet(`<div id="nh" style="display:flex;flex-direction:column;gap:12px"><div class="sheet-h"><h2>New animal here</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card">
+      <label class="f">Type<select id="nh-kind">${Object.entries(KIND).map(([k,v])=>`<option value="${k}" ${k==='calf'?'selected':''}>${v}</option>`).join('')}</select></label>
+      <div class="grid2"><label class="f">Visual tag<input id="nh-vid" type="text" autocomplete="off"></label><label class="f">Brand<input id="nh-brand" type="text" autocomplete="off"></label></div>
+      <label class="f">Group<select id="nh-group"><option value="">No group</option>${[...new Set(dg.concat(g))].map(x=>`<option ${x===def?'selected':''}>${esc(x)}</option>`).join('')}</select></label>
+      <div id="nh-dambox"><label class="f">Mother (collar, brand or tag)<input id="nh-damq" type="search" autocomplete="off"></label><div id="nh-dams" class="fit-list" style="margin-top:6px"></div></div>
+      <div id="nh-warn"></div>
+      <button type="button" class="btn primary fitgo" id="nh-go">Add and carry on</button>
+    </div></div>`);
+  let dam='';
+  const drawDams=()=>{ const q=$('#nh-damq').value.trim(); const xs=q?onHand().filter(x=>female(x) && matches(x,q)).slice(0,8):[];
+    $('#nh-dams').innerHTML = xs.map(x=>`<button type="button" class="fpick" data-dam="${esc(x.id)}" aria-pressed="${dam===x.id}">${idBox(x)}<span class="main">${brandsHtml(x)} <span class="sub">${esc(kindName(x))}${x.collar?' · collar '+esc(x.collar):''}</span></span></button>`).join('') || (q?'<div class="small muted">No cow or heifer matches.</div>':''); };
+  $('#nh-kind').addEventListener('change', e=>{ $('#nh-dambox').hidden = e.target.value!=='calf'; });
+  $('#nh-damq').addEventListener('input', drawDams);
+  $('#nh-dams').addEventListener('click', e=>{ const b=e.target.closest('[data-dam]'); if(b){ dam = dam===b.dataset.dam?'':b.dataset.dam; drawDams(); } });
+  $('#nh-go').addEventListener('click', ()=>{
+    const kind=$('#nh-kind').value, vid=$('#nh-vid').value.trim(), brand=$('#nh-brand').value.trim();
+    if(!vid && !brand && !(kind==='calf' && dam)){ $('#nh-warn').innerHTML='<div class="notice warn">Enter a tag or brand (or pick the mother for a calf).</div>'; return; }
+    const id=rid(), now=Date.now(), d=S.animals.get(dam);
+    const rec={kind, vid, brand1:brand, brand2:'', group:$('#nh-group').value, collar:'', collarOn:false, notes:'', createdAt:now, updatedAt:now, updatedBy:me()};
+    if(kind==='calf' && d){ rec.damId=d.id; rec.notes=`Calf of ${cowName(d)}`; }
+    put('animals/'+id, rec); logChange(id,'animal',label(rec),'added at the chute',d?[{f:'Mother',to:label(d)}]:[]);
+    closeSheet(); $('#fcq').value=''; S.wShow='todo'; pickCow(id);
+  });
+}
+
+// ---- finish the day ----
+function openFinish(){
+  const pool=dayPool(), done=pool.filter(workedToday), left=pool.filter(a=>!workedToday(a)), J=day.jobs, mine=Object.values(day.done);
+  const count=k=>mine.filter(x=>x.ticks[k]).length;
+  const rows=[];
+  if(J.collar) rows.push(['Collars fitted', count('collar')]);
+  (J.treat||[]).forEach((t,i)=>rows.push([t.product, count('t'+i)]));
+  if(J.preg) rows.push(['Preg checked', count('preg')]); if(J.brand) rows.push(['Branded '+J.brand, count('brand')]); if(J.tag) rows.push(['Ear tagged', count('tag')]);
+  if(J.weigh) rows.push(['Weighed', count('weigh')]); if(J.ai) rows.push(['AI bred', count('ai')]); if(J.castrate) rows.push(['Castrated', count('castrate')]);
+  if(J.move) rows.push(['Moved to '+gName(J.move.group), count('move')]); if(J.note) rows.push(['Notes', count('note')]);
+  (J.custom||[]).forEach((c,i)=>rows.push([c.name, count('c'+i)]));
+  const wd=(J.treat||[]).filter(t=>Number(t.withdrawalDays)>0).map(t=>[t.product, addDays(day.date, Number(t.withdrawalDays))]);
+  openSheet(`<div id="fin" style="display:flex;flex-direction:column;gap:12px"><div class="sheet-h"><h2>Finish the day</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card"><div class="wprog" style="font-size:20px"><b>${done.length}</b> head processed${dayGroups().length?' in '+esc(dayGroups().join(', ')):''}</div>
+      <table class="mtable"><tbody>${rows.map(([k,n])=>`<tr><td>${esc(k)}</td><td class="r"><b>${n}</b></td></tr>`).join('')}</tbody></table>
+      <div class="small muted">Job counts are for this phone.</div></div>
+    ${wd.length?`<div class="card"><b>Withdrawal</b>${wd.map(([p,d])=>`<div class="exp"><span>${esc(p)}</span><span class="warn-text">until ${esc(fmtDate(d))}</span></div>`).join('')}</div>`:''}
+    <div class="card"><b>Not processed · ${left.length}</b>${left.length?`<div class="small">${left.slice(0,200).map(a=>esc(`${kindName(a)} ${cowName(a)}`)).join(', ')}</div>`:'<div class="small muted">Every animal went through.</div>'}</div>
+    <div class="fab-row"><button type="button" class="btn primary fitgo" id="fin-go">Finish and clear the day</button><button type="button" class="btn" id="fin-back">Keep working</button></div></div>`);
+  $('#fin-back').addEventListener('click', closeSheet);
+  $('#fin-go').addEventListener('click', ()=>{ day=null; try{ localStorage.removeItem(dayKey()); }catch{} closeSheet(); S.fCow=''; S.wp=null; renderWork(); toast('Day finished'); });
+}
 
 // ---------- swap with a nearby phone (no signal): changes travel as QR codes, screen to camera ----------
 const SWAP_CHUNK = 700;
@@ -2200,13 +2573,15 @@ $('#swapBar').addEventListener('click', openSwap);
 
 // ---------- boot ----------
 function renderAll(){
-  if(S.tab==='herd') renderHerd(); else if(S.tab==='fit') renderFit(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='breeding') renderBreeding(); else if(S.tab==='health') renderHealth(); else if(S.tab==='money') renderMoney(); else renderLog();
+  if(S.tab==='herd') renderHerd(); else if(S.tab==='fit' || S.tab==='work') renderWork(); else if(S.tab==='collars') renderCollars(); else if(S.tab==='breeding') renderBreeding(); else if(S.tab==='health') renderHealth(); else if(S.tab==='money') renderMoney(); else renderLog();
 }
 setTab(); recompute(); renderSetup();
 if(!storageOk) toast('This browser isn’t keeping a copy on the phone. Use the home-screen app instead.');
 openStart(false);
 sync();
 $('#fq').insertAdjacentHTML('afterend', camButton('fq-photo'));
+$('#fcq').insertAdjacentHTML('afterend', camButton('fcq-photo').replace('<label ','<label id="fcq-photo-l" '));
+wireScan('#fcq-photo', '#fcScan', n=>{ $('#fcq').value=n; renderFit(); });
 wireScan('#fq-photo', '#fScan', n=>{ $('#fq').value=n; const x=fitCollars().find(c=>ckey(c.num)===ckey(n)); if(x) pickCollar(x.num); else renderFit(); });
 warmOcr(); window.addEventListener('online', warmOcr);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});

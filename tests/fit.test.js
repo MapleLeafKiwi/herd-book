@@ -99,7 +99,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   const C = n => pg.evaluate(n=>window.__herdbook.state.collars.get('c-'+n), n);
   const herdSize = await pg.evaluate(()=>window.__herdbook.state.animals.size);
   await pg.goto('http://localhost:8766/#fit'); await wait(200);
-  ok((await pg.textContent('#fitSwitch')).includes('Animals') && !/\b(she|her|cows?)\b/i.test((await pg.textContent('#fitSwitch'))+(await pg.textContent('#fitPair'))+(await pg.textContent('section[data-view=fit] .help'))), 'fitting screen wording is neutral: Animals, no she/her/cow');
+  ok((await pg.textContent('#fitSwitch')).includes('Animals') && !/\b(she|her|cows?)\b/i.test((await pg.textContent('#fitSwitch'))+(await pg.textContent('#fitPair'))+(await pg.textContent('section[data-view=work] .help'))), 'fitting screen wording is neutral: Animals, no she/her/cow');
   await pg.click('#fitSwitch [data-side=collar]'); await pg.fill('#fq','1001'); await pg.click('#fCollars [data-num="1001"]');
   await pg.click('#fitSwitch [data-side=cow]'); await pg.click('#fCows [data-cow=unknown]'); await wait(100);
   ok((await pg.textContent('#fitPair')).includes('Collar 1001 → animal not known'), 'bottom bar: collar → animal not known');

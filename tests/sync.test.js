@@ -196,7 +196,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pe.goto('http://localhost:8765/#fit'); await wait(300);
   await pe.click('#fitSwitch [data-side=cow]'); await pe.fill('#fcq','Crew Cow'); await pe.click('#fCows [data-cow]:not([data-cow=unknown])');
   await pe.fill('#fq','777'); await pe.click('#fNotice [data-num="777"]'); await pe.click('#fitGo'); await wait(2200);
-  ok(!(await pe.textContent('section[data-view=fit]')).includes('$') && await pe.isHidden('#navMoney'), 'crew fitting screen shows no money');
+  ok(!(await pe.textContent('section[data-view=work]')).includes('$') && await pe.isHidden('#navMoney'), 'crew fitting screen shows no money');
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   ok(await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].some(a=>a.brand1==='Crew Cow' && a.collar==='777' && a.collarOn===true)), 'collar fitted on a crew phone reaches the full-access phone');
   // crew: fit a collar to an animal that lost its ear tag, then work out which one
@@ -256,7 +256,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   // ---- new features: health, breeding, money (phone A full access, phone E crew) ----
   await pa.goto('http://localhost:8765/#health'); await wait(300);
   await pa.click('#treatBtn'); await pa.fill('#t-product','Bovi-Shield Gold'); await pa.fill('#t-dose','2 mL'); await pa.fill('#t-wd','30'); await pa.fill('#t-cost','45');
-  await pa.selectOption('#t-group','North'); await pa.click('#tf button[type=submit]'); await wait(2200);
+  await pa.check('#t-groups input[value="North"]'); await pa.click('#tf button[type=submit]'); await wait(2200);
   ok((await pa.textContent('#healthList')).includes('Bovi-Shield Gold'), 'treatment recorded for the North group');
   ok((await pa.textContent('#healthDue')).includes('On withdrawal'), 'withdrawal list shows the treated cow');
   await pa.goto('http://localhost:8765/#herd'); await wait(300);
@@ -345,6 +345,39 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pa.screenshot({path:path.join(OUT,'collars.png')});
   await pb.goto('http://localhost:8765/#log'); await wait(300);
   await pb.screenshot({path:path.join(OUT,'log.png'), fullPage:false});
+  // ---- Work Cattle: two phones working the same day, one goes offline, a crew phone never sees costs ----
+  const setupDay = async (pg, cost) => { await pg.goto('http://localhost:8765/#work'); await wait(300); await pg.click('#sheet .x').catch(()=>{});
+    await pg.check('#wSetup [data-job=treat]'); await pg.fill('#d0-product','Vac W'); await pg.fill('#d0-wd','14');
+    if(cost) await pg.fill('#d0-cost', cost); await pg.click('#d-start'); await wait(200); };
+  const firstAnimal = pg => pg.evaluate(()=>[...document.querySelectorAll('#fCows [data-cow]')].map(b=>b.dataset.cow).find(id=>id!=='unknown'));
+  await setupDay(pa, '12'); await setupDay(pb);
+  const X1 = await firstAnimal(pa); await pa.click(`#fCows [data-cow="${X1}"]`); await pa.click('#fitGo'); await wait(2200);
+  await B.context.setOffline(true);
+  await pb.evaluate(()=>window.__herdbook.sync()); await wait(300);
+  const Y1 = await pb.evaluate(x=>[...document.querySelectorAll('#fCows [data-cow]')].map(b=>b.dataset.cow).find(id=>id!=='unknown' && id!==x), X1);
+  await pb.click(`#fCows [data-cow="${Y1}"]`); await pb.click('#fitGo'); await wait(300);
+  await pb.reload().catch(()=>{}); await wait(400);
+  ok(await pb.evaluate(y=>window.__herdbook.state.animals.get(y).lastWorked===new Date().toLocaleDateString('en-CA'), Y1) && !(await pb.isVisible('#wSetup')), 'phone offline mid-day: the animal and the day survive closing the app');
+  await B.context.setOffline(false); await pb.evaluate(()=>window.__herdbook.sync()); await wait(800);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  const vw = await pa.evaluate(()=>[...window.__herdbook.state.treatments.values()].filter(t=>t.product==='Vac W'));
+  ok(vw.length===2 && vw.some(t=>t.animalIds.join()===X1) && vw.some(t=>t.animalIds.join()===Y1), 'two phones on the same day: one Vac W record per phone, neither overwrites the other');
+  await pa.goto('http://localhost:8765/#work'); await wait(200); await pa.click('#wShow [data-w=done]');
+  ok((await pa.locator(`#fCows [data-cow="${Y1}"]`).count())===1, 'the other phone’s animal shows as done on this phone');
+  await pa.click('#wShow [data-w=todo]');
+  // crew phone: no cost field, and never receives the cost from the full-access phone's record
+  await pe.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  await pe.goto('http://localhost:8765/#work'); await wait(300); await pe.click('#sheet .x').catch(()=>{});
+  await pe.check('#wSetup [data-job=treat]');
+  ok(await pe.locator('#d0-cost').count()===0, 'crew phone: no cost box in the day setup');
+  await pe.fill('#d0-product','Vac W'); await pe.fill('#d0-wd','14'); await pe.click('#d-start'); await wait(200);
+  ok(await pe.locator(`#fCows [data-cow="${X1}"]`).count()===0, 'crew phone sees animals done by the other phones as done');
+  const Z1 = await firstAnimal(pe); await pe.click(`#fCows [data-cow="${Z1}"]`); await pe.click('#fitGo'); await wait(2200);
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500); await pe.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(z=>[...window.__herdbook.state.treatments.values()].some(t=>t.product==='Vac W' && t.animalIds.includes(z) && (t.cost===''||t.cost==null)), Z1), 'crew phone’s Work Cattle treatment reaches the full-access phone, with no cost');
+  ok(await pe.evaluate(()=>[...window.__herdbook.state.treatments.values()].every(t=>!('cost' in t))), 'crew phone never receives treatment costs');
+  for(const pg of [pa,pb,pe]){ await pg.click('#wFinish'); await pg.click('#fin-go'); }
+
   // collar order set on one phone shows on another after syncing
   await pa.goto('http://localhost:8765/#fit'); await wait(300); await pa.click('#sheet .x').catch(()=>{});
   await pa.click('#fitSwitch [data-side=collar]'); await pa.click('#ordBtn'); await pa.fill('#ord-nums','5, 3, 4'); await pa.click('#ord-add'); await pa.click('#sheet .x'); await wait(2200);

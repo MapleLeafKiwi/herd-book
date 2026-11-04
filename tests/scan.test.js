@@ -92,7 +92,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pf.click('#addBtn'); await pf.fill('#a-b1','Lazy H'); await pf.selectOption('#a-group','__new'); await pf.fill('#a-gnew','Group 9'); await pf.fill('#a-vid','V77'); await pf.click('#af button[type=submit]'); await wait(300);
   ok((await pf.textContent('#herdList')).includes('V77'), 'herd list shows the visual tag');
   await pf.click('section[data-view=herd] .help summary'); ok(await pf.isVisible('section[data-view=herd] .help ul'), 'tapping it shows the explanation');
-  ok(await pf.evaluate(()=>[...document.querySelectorAll('section[data-view]')].every(x=>x.querySelector(':scope > details.help'))), 'every tab has a How this page works note');
+  ok(await pf.evaluate(()=>[...document.querySelectorAll('section[data-view]')].every(x=>x.querySelector('details.help'))), 'every tab has a How this page works note');
   await pf.goto('http://localhost:8765/#fit'); await wait(300);
   await pf.click('#fitSwitch [data-side=cow]'); await pf.fill('#fcq','Lazy H');
   ok((await pf.textContent('#fCows')).includes('V77'), 'fitting screen shows the visual tag for a cow with no collar'); await pf.click('#fCows [data-cow]:not([data-cow=unknown])');
