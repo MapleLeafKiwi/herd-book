@@ -43,7 +43,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   const dragTo = async (fromId, toId) => {
     const hb=await pg.locator(`#ord-line [data-oc="${fromId}"] [data-grip]`).boundingBox(), tb=await pg.locator(`#ord-line [data-oc="${toId}"]`).boundingBox();
     const x=hb.x+hb.width/2, y=hb.y+hb.height/2, ty=tb.y+tb.height/2+(tb.y>hb.y?12:-12);
-    await pg.mouse.move(x,y); await pg.mouse.down(); await pg.mouse.move(x,ty,{steps:15}); await pg.mouse.up(); await wait(150); };
+    await pg.mouse.move(x,y); await pg.mouse.down(); await pg.mouse.move(x,ty,{steps:15}); await pg.mouse.up(); await wait(450); };
   await dragTo('c-101','c-103');
   ok((await line()).join()==='101,103,102,7203418856', 'drag a collar up to the front: '+(await line()).join());
   await dragTo('c-101','c-103');

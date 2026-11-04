@@ -1991,25 +1991,50 @@ function openOrder(){
     else if(op==='out') L.splice(i,1);
     setLine(L); draw();
   });
-  // Drag a collar up or down the line by its grab handle. The row jumps to its new place as the finger passes
-  // the middle of the next row; the sheet scrolls when dragging near its top or bottom edge.
+  // Drag a collar up or down the line by its grab handle.
+  // Pick up: the row lifts (scale, shadow, slight tilt) and follows the finger. The others slide out of the way as it
+  // crosses the middle of each one, always to exact slots measured at pick-up. Let go: it settles into the gap, then the
+  // new order is saved and the list redrawn.
   let drag=null;
   const list=()=>$('#ord-line .fit-list');
-  const mid=el=>{ const r=el.getBoundingClientRect(); return r.top+r.height/2; };
-  const renumber=()=>{ [...list().children].forEach((r,i)=>{ const n=r.querySelector('.ordn'); if(n) n.textContent=i+1; }); };
-  const place=()=>{ const r=drag.row, ul=list();
-    let p=r.previousElementSibling; while(p && drag.y<mid(p)){ ul.insertBefore(r,p); p=r.previousElementSibling; }
-    let n=r.nextElementSibling; while(n && drag.y>mid(n)){ ul.insertBefore(n,r); n=r.nextElementSibling; }
-    renumber(); };
-  const tick=()=>{ if(!drag) return; const sh=$('#sheet'), b=sh.getBoundingClientRect();
+  const still=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const lift=(dy,up)=>`translateY(${dy}px)`+(up && !still()?' scale(1.04) rotate(-1.5deg)':'');
+  function layout(){
+    const d=drag, f=d.from, sh=$('#sheet');
+    const dy=d.y-d.y0+(sh.scrollTop-d.s0), center=d.top[f]+dy+d.h[f]/2;
+    let t=f; while(t>0 && center<d.top[t-1]+d.h[t-1]/2) t--; while(t<d.n-1 && center>d.top[t+1]+d.h[t+1]/2) t++;
+    d.to=t; const step=d.h[f]+d.gap;
+    d.rows.forEach((r,i)=>{ if(i===f) return;
+      const sh2 = (f<t && i>f && i<=t) ? -step : (t<f && i>=t && i<f) ? step : 0;
+      r.style.transform = sh2 ? `translateY(${sh2}px)` : '';
+      const n=r.querySelector('.ordn'); if(n) n.textContent = 1 + i + (sh2<0?-1:sh2>0?1:0); });
+    const nn=d.row.querySelector('.ordn'); if(nn) nn.textContent=t+1;
+    d.row.style.transform = lift(dy,true);
+  }
+  const tick=()=>{ if(!drag || drag.done) return; const sh=$('#sheet'), b=sh.getBoundingClientRect();
     if(drag.y<b.top+70) sh.scrollTop-=12; else if(drag.y>b.bottom-70) sh.scrollTop+=12;
-    place(); requestAnimationFrame(tick); };
-  const finish=()=>{ if(!drag) return; const ids=[...list().children].map(r=>r.dataset.oc); drag.row.classList.remove('dragging'); drag=null;
-    const L=collarLine(); if(ids.join()!==L.map(c=>c.id).join()) setLine(ids.map(id=>S.collars.get(id)).filter(Boolean)); draw(); };
-  $('#ord').addEventListener('pointerdown', e=>{ const h=e.target.closest('[data-grip]'); if(!h) return;
+    layout(); requestAnimationFrame(tick); };
+  function finish(){
+    if(!drag || drag.done) return; const d=drag; d.done=true;
+    const f=d.from, t=d.to, sh=$('#sheet');
+    // where the lifted row's slot is now, relative to where it started
+    const end = t>f ? d.top[t]+d.h[t]-d.h[f]-d.top[f] : d.top[t]-d.top[f];
+    const dyNow = d.y-d.y0+(sh.scrollTop-d.s0);
+    d.row.classList.add('settling'); d.row.style.transform=`translateY(${end}px)`;
+    const commit=()=>{ if(drag!==d) return; drag=null;
+      const ids=d.rows.map(r=>r.dataset.oc); const [m]=ids.splice(f,1); ids.splice(t,0,m);
+      const L=collarLine(); if(ids.join()!==L.map(c=>c.id).join()) setLine(ids.map(id=>S.collars.get(id)).filter(Boolean)); draw(); };
+    if(still() || Math.abs(dyNow-end)<1) commit(); else { d.row.addEventListener('transitionend', commit, {once:true}); setTimeout(commit, 320); }
+  }
+  $('#ord').addEventListener('pointerdown', e=>{ const h=e.target.closest('[data-grip]'); if(!h || drag) return;
     e.preventDefault(); try{ h.setPointerCapture(e.pointerId); }catch{}
-    drag={row:h.closest('.ordrow'), pid:e.pointerId, y:e.clientY}; drag.row.classList.add('dragging'); requestAnimationFrame(tick); });
-  $('#ord').addEventListener('pointermove', e=>{ if(drag && e.pointerId===drag.pid){ drag.y=e.clientY; place(); } });
+    const rows=[...list().children], row=h.closest('.ordrow');
+    const top=rows.map(r=>r.offsetTop), hts=rows.map(r=>r.offsetHeight);
+    drag={row, rows, from:rows.indexOf(row), to:rows.indexOf(row), n:rows.length, top, h:hts, gap: rows.length>1 ? top[1]-top[0]-hts[0] : 8,
+      pid:e.pointerId, y0:e.clientY, y:e.clientY, s0:$('#sheet').scrollTop};
+    list().classList.add('sorting'); row.classList.add('dragging'); row.style.transform=lift(0,true);
+    requestAnimationFrame(tick); });
+  $('#ord').addEventListener('pointermove', e=>{ if(drag && !drag.done && e.pointerId===drag.pid){ drag.y=e.clientY; layout(); } });
   $('#ord').addEventListener('pointerup', e=>{ if(drag && e.pointerId===drag.pid) finish(); });
   $('#ord').addEventListener('pointercancel', e=>{ if(drag && e.pointerId===drag.pid) finish(); });
   // keyboard: arrow keys on a handle move that collar one place

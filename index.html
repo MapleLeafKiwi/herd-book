@@ -259,7 +259,10 @@ body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-b
 .ordtop{display:flex;align-items:center;gap:10px}.ordtop .btn{margin-left:auto;min-height:48px;min-width:48px}
 .ordn{font-family:var(--display);font-weight:700;font-size:22px;min-width:28px;text-align:center}
 .grip{flex:none;width:52px;height:56px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:var(--sunk);color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
-.ordrow.dragging{border-color:var(--primary);box-shadow:0 6px 18px rgba(0,0,0,.25);background:var(--ok-soft);position:relative;z-index:2}
+.fit-list.sorting .ordrow{transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.fit-list.sorting .ordrow.dragging{transition:box-shadow .15s ease, background-color .15s ease;border-color:var(--primary);box-shadow:0 14px 30px rgba(0,0,0,.28),0 3px 8px rgba(0,0,0,.18);background:var(--ok-soft);position:relative;z-index:3;will-change:transform}
+.fit-list.sorting .ordrow.dragging.settling{transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+@media (prefers-reduced-motion: reduce){.fit-list.sorting .ordrow,.fit-list.sorting .ordrow.dragging.settling{transition:none}}
 .ordrow.dragging .grip{cursor:grabbing;color:var(--ink)}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
