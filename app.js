@@ -203,9 +203,11 @@ const onHand = () => animals().filter(a=>!isSold(a));
 const females = () => onHand().filter(a=>a.kind!=='bull');
 const bulls = () => onHand().filter(a=>a.kind==='bull').sort(byCollar);
 const groups = () => [...new Set(onHand().map(a=>a.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-const label = a => a ? `${KIND[a.kind]||'Cow'} ${a.collar ? '#'+a.collar : (a.brand1||'(no collar)')}` : 'Deleted animal';
+const label = a => a ? `${KIND[a.kind]||'Cow'} ${a.collar ? '#'+a.collar : a.vid ? 'tag '+a.vid : (a.brand1||'(no collar)')}` : 'Deleted animal';
 const collarHtml = (a, xl) => a.collar ? `<span class="collar${xl?' xl':''}">${esc(a.collar)}</span>` : `<span class="collar none${xl?' xl':''}">no collar</span>`;
 const brandsHtml = a => [a.brand1,a.brand2].filter(Boolean).map(b=>`<span class="brand">${esc(b)}</span>`).join(' ');
+// With no collar, the visual tag is the next best way to tell animals apart.
+const idHtml = a => !a.collar && (a.vid||a.eid) ? `<span class="idtag">Tag ${esc(a.vid||a.eid)}</span>` : '';
 function matches(a, q){
   if(!q) return true;
   const hay = [a.collar,a.brand1,a.brand2,a.group,a.notes,KIND[a.kind],a.vid,a.eid,a.breed].join(' ').toLowerCase();
@@ -218,7 +220,7 @@ function setTab(){
   S.tab = t==='bulls' ? 'breeding' : ['herd','yard','collars','breeding','health','money','log'].includes(t) ? t : 'herd';
   if(S.tab==='money' && !fin()) S.tab='herd';
   $('#navMoney').hidden = !fin();
-  document.querySelectorAll('nav a').forEach(a=>a.setAttribute('aria-current', a.dataset.tab===S.tab?'page':'false'));
+  document.querySelectorAll('nav a').forEach(a=>{ a.setAttribute('aria-current', a.dataset.tab===S.tab?'page':'false'); if(a.dataset.tab===S.tab) a.scrollIntoView({block:'nearest',inline:'nearest'}); });
   document.querySelectorAll('section[data-view]').forEach(s=>s.hidden = s.dataset.view!==S.tab);
   renderAll();
 }
@@ -236,7 +238,7 @@ function renderHerd(){
   const fem = live.filter(a=>a.kind!=='bull'), withCollar = live.filter(a=>a.collar);
   const sum = (xs,k) => xs.reduce((t,a)=>t+(Number(a[k])||0),0);
   const bought = fin() ? sum(inGroup,'purchasePrice') : 0, soldFor = fin() ? sum(sold,'salePrice') : 0;
-  $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>bulls</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
+  $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>${live.length-fem.length===1?'bull':'bulls'}</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
   const q = $('#q').value.trim();
   const rows = inGroup.filter(a=>matches(a,q)).sort(byCollar);
   const el = $('#herdList');
@@ -246,7 +248,7 @@ function renderHerd(){
     <button type="button" class="row${isSold(a)?' sold':''}" data-id="${esc(a.id)}">
       ${collarHtml(a)}
       <span class="main">
-        <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}
+        <span class="line1">${brandsHtml(a) || (idHtml(a)?'':'<span class="muted">No brand</span>')}${idHtml(a)}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
           ${isSold(a)?'<span class="pill sold">Sold</span>': a.collar ? (a.collarOn?'<span class="pill ok">Fitted</span>':'<span class="pill warn">Not fitted</span>') : ''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
         <span class="line2">${esc(a.group||'No group')}${a.notes?' · '+esc(a.notes):''}</span>
@@ -284,7 +286,7 @@ function renderYard(){
   el.innerHTML = rows.slice(0,120).map(a=>`
     <div class="ycard${a.collarOn?' fitted':''}">
       <div class="top">${collarHtml(a,true)}<div style="min-width:0;display:flex;flex-direction:column;gap:6px">
-        <div class="brands">${brandsHtml(a)||'<span class="muted">No brand</span>'}</div>
+        <div class="brands">${brandsHtml(a)||(idHtml(a)?'':'<span class="muted">No brand</span>')}${idHtml(a)}</div>
         <div class="meta">${esc(KIND[a.kind]||'Cow')} · ${esc(a.group||'No group')}</div></div></div>
       ${a.notes?`<div class="small">${esc(a.notes)}</div>`:''}
       <div class="acts">
@@ -317,7 +319,7 @@ function renderBulls(){
   el.innerHTML = bs.map(b=>{
     const xs=expsForBull(b.id), open=xs.filter(x=>!x.end);
     return `<div class="card">
-      <h3>${collarHtml(b)} ${brandsHtml(b)} ${open.length?'<span class="pill ok">Out with cows</span>':'<span class="pill">Not out</span>'}</h3>
+      <h3>${collarHtml(b)} ${brandsHtml(b)} ${idHtml(b)} ${open.length?'<span class="pill ok">Out with cows</span>':'<span class="pill">Not out</span>'}</h3>
       ${xs.length? xs.map(x=>`<div style="display:flex;flex-direction:column;gap:6px">${expLine(x,false)}
           <div class="bar">${!x.end?`<button type="button" class="btn" data-pull="${esc(x.id)}">Pull bull</button>`:''}<button type="button" class="btn" data-cows="${esc(x.id)}">See cows</button></div></div>`).join('') : '<div class="small muted">No cows recorded with this bull yet.</div>'}
       <div class="bar"><button type="button" class="btn primary" data-turn="${esc(b.id)}">Put with cows</button><button type="button" class="btn" data-open="${esc(b.id)}">Bull details</button></div>
@@ -1165,10 +1167,10 @@ function renderMoney(){
   const tile = (k, v, sub, cls) => `<div class="mtile ${cls||''}"><div class="small muted">${k}</div><div class="mv">${v}</div>${sub?`<div class="small muted">${sub}</div>`:''}</div>`;
   $('#moneyBody').innerHTML = `
     <div class="mtiles">
-      ${tile('Net profit', money(net), `${fmtPct(pct(net, costs))} on ${money(costs)} spent`, net>=0?'good':'bad')}
+      ${tile(net>=0?'Profit':'Loss so far', money(Math.abs(net)), `Sold ${money(sales)}, spent ${money(costs)}`, net>=0?'good':'bad')}
       ${tile('Sales', money(sales), `${sold.length} head sold`)}
       ${tile('Purchases', money(purchases), `${bought.length} head bought`)}
-      ${tile('Expenses', money(expTotal+tCost), tCost?`incl. ${money(tCost)} treatments`:`${exps.length} entries`)}
+      ${tile('Expenses', money(expTotal+tCost), tCost?`incl. ${money(tCost)} treatments`:`${exps.length} ${exps.length===1?'entry':'entries'}`)}
     </div>
     <div class="card"><b>Sold animals</b>
       <div class="small muted">Profit on animals with both a purchase and a sale price: ${money(sp-cp)} (${fmtPct(pct(sp-cp, cp))}). Expenses aren’t split per animal.</div>
@@ -1542,7 +1544,7 @@ function renderSwapBar(){
   const b=$('#swapBar'); if(!b) return;
   b.hidden = !(cfg.code && offlineNow());
   const n=outbox.length;
-  b.innerHTML = `<span><b>No signal.</b> ${n?`${n} change${n>1?'s':''} on this phone.`:'Up to date as of last sync.'}</span><span class="btn">Swap with nearby phone</span>`;
+  b.innerHTML = `<span><b>No signal</b>${n?` · ${n} unsent`:''}</span><span class="go">Swap with nearby phone ›</span>`;
 }
 // Changes this phone can pass on: never money, never expenses.
 function shareableOps(){

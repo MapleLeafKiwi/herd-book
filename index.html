@@ -40,7 +40,8 @@ h1{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.02e
 .sync{font-size:13px;color:var(--muted)}
 nav{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
 nav a{flex:1;text-align:center;font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--muted);padding:8px 6px;border-radius:8px;white-space:nowrap}
-@media (max-width:440px){nav{gap:2px}nav a{font-size:14px;letter-spacing:0;padding:8px 8px;flex:0 0 auto}}
+@media (max-width:440px){nav{gap:0;margin-inline:-6px}nav a{font-size:15px;letter-spacing:0;padding:8px 5px}}
+@media (max-width:370px){nav a{font-size:13.5px;padding:8px 4px}}
 nav a[aria-current="page"]{background:var(--ink);color:var(--surface)}
 main{padding-block:16px 48px}
 section[data-view]{display:flex;flex-direction:column;gap:14px}
@@ -57,7 +58,7 @@ textarea{min-height:90px;resize:vertical}
 .btn.danger{color:var(--warn);border-color:var(--warn)}
 .btn.danger.armed{background:var(--warn);color:var(--surface)}
 .btn:disabled{opacity:.5;cursor:default}
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px;white-space:nowrap;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
 .stats{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
@@ -75,6 +76,9 @@ textarea{min-height:90px;resize:vertical}
 .collar.none{background:var(--sunk);color:var(--muted);font-size:15px}
 .collar.xl{height:84px;min-width:120px;font-size:54px;padding-left:28px;border-radius:8px 18px 18px 8px}
 .collar.xl::before{left:9px;width:11px;height:11px;margin-top:-5.5px}
+.collar.none{white-space:nowrap}
+.collar.none.xl{font-size:22px;padding:0 14px 0 28px}
+.idtag{font-size:14px;font-weight:700;color:var(--muted);white-space:nowrap}
 .brand{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.03em;border:1.5px solid var(--ink);border-radius:5px;padding:0 6px;line-height:1.35}
 .pill{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .pill.ok{background:var(--ok-soft);color:var(--ok)}
@@ -157,8 +161,8 @@ nav a{flex:1 0 auto}
 .scanthumb{width:96px;height:auto;border-radius:6px;flex:none}
 .scanpick{font-variant-numeric:tabular-nums;text-align:left}
 div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
-.swap-bar{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
-.swap-bar .btn{min-height:40px;padding:8px 12px;background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.swap-bar{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-height:46px;background:var(--surface);color:var(--ink);font:inherit;font-size:15px;cursor:pointer}
+.swap-bar .go{font-weight:700;color:var(--focus);white-space:nowrap}
 .swapqr{width:min(340px,100%)}
 .swapvid{width:100%;max-width:420px;border-radius:12px;background:#000;aspect-ratio:4/3;object-fit:cover}
 .progress{width:100%;max-width:420px;height:10px;background:var(--sunk);border-radius:999px;overflow:hidden}
@@ -220,7 +224,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="yard" hidden>
-    <input id="yq" class="big-search" type="search" placeholder="Type brand or collar #" autocomplete="off" inputmode="text">
+    <input id="yq" class="big-search" type="search" placeholder="Brand or collar #" autocomplete="off" inputmode="text">
     <div class="bar">
       <select id="yGroup" style="flex:1 1 160px;width:auto"></select>
       <div class="seg" style="flex:1 1 220px" id="yFilter">
