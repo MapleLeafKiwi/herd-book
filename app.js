@@ -180,6 +180,7 @@ function updateSync(){
   else if(n) t = `${n} change${n>1?'s':''} waiting to send`;
   else t = S.lastSync ? 'Synced '+ago(S.lastSync) : 'Ready';
   el.textContent=(cfg.ranchName?cfg.ranchName+' · ':'')+t; el.classList.toggle('off',off);
+  const net=$('#net'), down=offlineNow(); net.textContent = down ? 'Offline' : 'Online'; net.classList.toggle('off', down);
   renderSwapBar();
   $('#setupBanner').hidden = !!(syncUrl() && cfg.code);
 }
@@ -646,7 +647,6 @@ function openShare(intro){
   m && m.addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m; m.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b)); draw(); });
   draw();
 }
-$('#shareBtn').addEventListener('click', ()=>openShare());
 
 function renderSetup(){
   const st=$('#cfg-status'); if(!st) return;
@@ -654,15 +654,14 @@ function renderSetup(){
   if(document.activeElement!==nameEl) nameEl.value = cfg.name||'';
   if(document.activeElement!==urlEl) urlEl.value = cfg.url||SYNC_URL||'';
   $('#ranchLine').innerHTML = cfg.code
-    ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div><div class="small muted">${cfg.role==='full'?'Full access, including prices':cfg.role==='crew'?'Crew access, no prices':''}</div><div style="margin-top:8px"><button type="button" class="btn primary" id="shareNow">Share this ranch</button></div>`
+    ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div><div class="small muted">${cfg.role==='full'?'Full access, including prices':cfg.role==='crew'?'Crew access, no prices':''}</div><div style="margin-top:8px"><button type="button" class="btn primary" id="shareBtn">Share this ranch</button></div>`
     : `<b>Not part of a ranch yet.</b> <button type="button" class="btn" id="joinNow">Join or start a ranch</button>`;
   st.textContent = !(syncUrl()&&cfg.code) ? 'Changes are kept on this phone only until it joins a ranch.'
     : lastErr ? lastErr
     : S.lastSync ? `Last synced ${new Date(S.lastSync).toLocaleString()}.` : 'Tap “Sync now” to load the herd.';
   st.textContent += ocrReady() ? ' Collar photo scanner is ready to use without signal.' : ' The collar photo scanner downloads the next time there’s signal.';
-  $('#shareBtn').hidden = !cfg.code;
 }
-$('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#shareNow')) openShare(); });
+$('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#shareBtn')) openShare(); });
 $('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#joinNow')) openStart(true); });
 $('#cfg-save').addEventListener('click', ()=>{ cfg.name=$('#cfg-name').value.trim(); LS.set(K.cfg,cfg); toast('Saved'); renderSetup(); });
 $('#cfg-url-save').addEventListener('click', ()=>{ const u=$('#cfg-url').value.trim(); if(u && u!==SYNC_URL) cfg.url=u; else delete cfg.url; LS.set(K.cfg,cfg); lastErr=''; toast('Saved'); renderSetup(); sync(); });

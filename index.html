@@ -22,7 +22,7 @@
 :root{
   --bg:#f3eee4; --surface:#fffdf8; --sunk:#e9e1d2; --ink:#2a2118; --muted:#6b5d4d; --line:#d9cdb8;
   --tag:#c97a2e; --tag-ink:#1e1206; --ok:#3f6f3a; --ok-soft:#e1ead6; --warn:#9b4a1c; --warn-soft:#f3dfcf; --focus:#1f6fa8;
-  --head:#3e4a3a; --head-ink:#f6f1e6; --head-muted:#d3d6c6; --head-warn:#f2b98a; --nav-on:#f6f1e6; --nav-on-ink:#2f3a2c;
+  --head:#3e4a3a; --head-ink:#f6f1e6; --head-muted:#d3d6c6; --head-warn:#f2b98a; --head-ok:#b9dca6; --nav-on:#f6f1e6; --nav-on-ink:#2f3a2c;
   --primary:#4b6847; --primary-ink:#ffffff;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -30,12 +30,12 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#1a1712; --surface:#24201a; --sunk:#1d1a15; --ink:#efe7d8; --muted:#b0a28c; --line:#3a342a;
   --tag:#d98a3d; --tag-ink:#1e1206; --ok:#9cc58a; --ok-soft:#23301d; --warn:#e69a64; --warn-soft:#3b2618; --focus:#6fb3e3;
-  --head:#232b21; --head-ink:#ece5d5; --head-muted:#b4b9a6; --head-warn:#e69a64; --nav-on:#9cb68f; --nav-on-ink:#16200f;
+  --head:#232b21; --head-ink:#ece5d5; --head-muted:#b4b9a6; --head-warn:#e69a64; --head-ok:#9cc58a; --nav-on:#9cb68f; --nav-on-ink:#16200f;
   --primary:#9cb68f; --primary-ink:#16200f; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#1a1712; --surface:#24201a; --sunk:#1d1a15; --ink:#efe7d8; --muted:#b0a28c; --line:#3a342a;
   --tag:#d98a3d; --tag-ink:#1e1206; --ok:#9cc58a; --ok-soft:#23301d; --warn:#e69a64; --warn-soft:#3b2618; --focus:#6fb3e3;
-  --head:#232b21; --head-ink:#ece5d5; --head-muted:#b4b9a6; --head-warn:#e69a64; --nav-on:#9cb68f; --nav-on-ink:#16200f;
+  --head:#232b21; --head-ink:#ece5d5; --head-muted:#b4b9a6; --head-warn:#e69a64; --head-ok:#9cc58a; --nav-on:#9cb68f; --nav-on-ink:#16200f;
   --primary:#9cb68f; --primary-ink:#16200f; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
@@ -44,7 +44,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--head);color:var(--head-ink);border-bottom:1px solid var(--line)}
 .hrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-block:12px 8px}
 h1{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.02em;margin:0;text-transform:uppercase}
-.sync{font-size:13px;color:var(--head-muted)}
+.sync{font-size:15px;font-weight:700;color:var(--ok)}
 nav{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
 nav a{flex:1;text-align:center;font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;color:var(--head-muted);padding:8px 6px;border-radius:8px;white-space:nowrap}
 @media (max-width:440px){nav{gap:0;margin-inline:-6px}nav a{font-size:15px;letter-spacing:0;padding:8px 5px}}
@@ -145,12 +145,12 @@ label.check input{width:24px;height:24px}
 .seg button{flex:1;border:0;background:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .hrow h1{white-space:nowrap;flex:none}
-.sync{min-width:0;max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .qr{background:#fff;padding:10px;border-radius:12px;width:min(240px,100%)}
 .qr svg{display:block;width:100%;height:auto}
 .hrow{align-items:center}
-.hrow .sync{margin-left:auto}
-.sharebtn{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-weight:700;cursor:pointer}
+.net{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:15px;color:var(--head-ink);text-decoration:none;white-space:nowrap}
+.net::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--head-ok)}
+.net.off::before{background:var(--head-warn)}
 nav a{flex:1 0 auto}
 .warn-text{color:var(--warn);font-weight:700}
 .good-text{color:var(--ok);font-weight:700}
@@ -179,7 +179,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .swapvid{width:100%;max-width:420px;border-radius:12px;background:#000;aspect-ratio:4/3;object-fit:cover}
 .progress{width:100%;max-width:420px;height:10px;background:var(--sunk);border-radius:999px;overflow:hidden}
 .progress>div{height:100%;width:0;background:var(--ok);transition:width .2s}
-.sync.off{color:var(--head-warn);font-weight:700}
+.sync.off{color:var(--warn)}
 .conflict-bar{display:block;width:100%;margin-bottom:12px;text-align:left;border:0;border-radius:10px;padding:12px 14px;background:var(--tag);color:var(--tag-ink);font:inherit;font-weight:700;cursor:pointer}
 .ro{margin-bottom:12px}
 .vbox{background:var(--sunk);border-radius:10px;padding:10px;min-width:0;overflow-wrap:anywhere}
@@ -210,7 +210,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 <body>
 <header>
   <div class="wrap">
-    <div class="hrow"><h1>Herd Book</h1><span class="sync" id="sync">Connecting…</span><button type="button" class="sharebtn" id="shareBtn" hidden>Share</button></div>
+    <div class="hrow"><h1>Herd Book</h1><a class="net" id="net" href="#log" aria-label="Signal and sync details">Online</a></div>
     <nav>
       <a href="#herd" data-tab="herd">Herd</a>
       <a href="#yard" data-tab="yard">Yard</a>
@@ -301,6 +301,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
     <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">
       <div id="ranchLine"></div>
+      <div class="sync" id="sync">Connecting…</div>
       <label class="f">Your name (shown in the change log)<input id="cfg-name" type="text" autocomplete="name"></label>
       <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save name</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
       <div class="small" id="cfg-status"></div>
