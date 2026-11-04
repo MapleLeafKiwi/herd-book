@@ -77,6 +77,11 @@ textarea{min-height:90px;resize:vertical}
 .collar.xl{height:84px;min-width:120px;font-size:54px;padding-left:28px;border-radius:8px 18px 18px 8px}
 .collar.xl::before{left:9px;width:11px;height:11px;margin-top:-5.5px}
 .collar.none{white-space:nowrap}
+.collar.long{font-size:17px;letter-spacing:0}
+.collar.xl.long{font-size:clamp(26px,8vw,36px)}
+.aid{display:inline-flex;align-items:center;justify-content:center;min-width:64px;font-family:var(--display);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.aid.none{font-size:14px;font-weight:600;color:var(--muted)}
+.cicon{display:inline-flex;color:var(--ok);align-self:center}
 .collar.none.xl{font-size:22px;padding:0 14px 0 28px}
 .idtag{font-size:14px;font-weight:700;color:var(--muted);white-space:nowrap}
 .brand{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.03em;border:1.5px solid var(--ink);border-radius:5px;padding:0 6px;line-height:1.35}
@@ -172,7 +177,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .ro{margin-bottom:12px}
 .vbox{background:var(--sunk);border-radius:10px;padding:10px;min-width:0;overflow-wrap:anywhere}
 .vbox .val{font-weight:700;margin-top:4px}
-.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .ctile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;min-width:0;font:inherit;color:inherit}
 .ctile .who{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .ctile.free{border-style:dashed}
@@ -213,7 +218,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 
   <section data-view="herd">
     <div class="bar">
-      <input id="q" class="search" type="search" placeholder="Search collar, brand, notes, group" autocomplete="off">
+      <input id="q" class="search" type="search" placeholder="Search tag, brand, notes, group" autocomplete="off">
       <button class="btn primary" id="addBtn" type="button">+ Add animal</button>
     </div>
     <div class="chips" id="groupChips"></div>

@@ -7,6 +7,8 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => new Date().toLocaleDateString('en-CA');
 const byCollar = (a,b) => String(a.collar||'~').localeCompare(String(b.collar||'~'), undefined, {numeric:true});
+// Lists go by visual tag: collar numbers are long and mostly matter in the Yard.
+const byTag = (a,b) => String(a.vid||a.eid||'~').localeCompare(String(b.vid||b.eid||'~'), undefined, {numeric:true}) || byCollar(a,b);
 const KIND = {cow:'Cow', heifer:'Heifer', bull:'Bull', steer:'Steer', calf:'Calf'};
 const FIELDS = [['kind','Type'],['collar','Collar'],['group','Group'],['brand1','Brand'],['brand2','2nd brand'],['collarOn','Collar fitted'],['notes','Notes'],
   ['vid','Visual tag (VID)'],['eid','EID / RFID'],['breed','Breed'],['birthDate','Date of birth'],
@@ -201,13 +203,17 @@ const FIN = ['purchasePrice','purchaseDate','salePrice','saleDate'];
 const animals = () => [...S.animals.values()];
 const onHand = () => animals().filter(a=>!isSold(a));
 const females = () => onHand().filter(a=>a.kind!=='bull');
-const bulls = () => onHand().filter(a=>a.kind==='bull').sort(byCollar);
+const bulls = () => onHand().filter(a=>a.kind==='bull').sort(byTag);
 const groups = () => [...new Set(onHand().map(a=>a.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-const label = a => a ? `${KIND[a.kind]||'Cow'} ${a.collar ? '#'+a.collar : a.vid ? 'tag '+a.vid : (a.brand1||'(no collar)')}` : 'Deleted animal';
-const collarHtml = (a, xl) => a.collar ? `<span class="collar${xl?' xl':''}">${esc(a.collar)}</span>` : `<span class="collar none${xl?' xl':''}">no collar</span>`;
+const label = a => a ? `${KIND[a.kind]||'Cow'} ${a.vid ? a.vid : a.collar ? 'collar '+a.collar : a.eid ? 'EID '+a.eid : (a.brand1||'(no tag)')}` : 'Deleted animal';
+const collarHtml = (a, xl) => a.collar ? `<span class="collar${xl?' xl':''}${String(a.collar).length>5?' long':''}">${esc(a.collar)}</span>` : `<span class="collar none${xl?' xl':''}">no collar</span>`;
 const brandsHtml = a => [a.brand1,a.brand2].filter(Boolean).map(b=>`<span class="brand">${esc(b)}</span>`).join(' ');
-// With no collar, the visual tag is the next best way to tell animals apart.
-const idHtml = a => !a.collar && (a.vid||a.eid) ? `<span class="idtag">Tag ${esc(a.vid||a.eid)}</span>` : '';
+// The visual tag, shown beside the brand.
+const idHtml = a => (a.vid||a.eid) ? `<span class="idtag">Tag ${esc(a.vid||a.eid)}</span>` : '';
+// In lists an animal is shown by its visual tag; a small collar icon means its collar is on.
+const COLLAR_ICON = '<span class="cicon" role="img" aria-label="Collar fitted" title="Collar fitted"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4.5 7.5a7.5 7.5 0 0 0 15 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><rect x="8.5" y="13.5" width="7" height="8" rx="1.6" fill="currentColor"/></svg></span>';
+const fittedIcon = a => a.collar && a.collarOn ? COLLAR_ICON : '';
+const idBox = a => (a.vid||a.eid) ? `<span class="aid">${esc(a.vid || '…'+String(a.eid).slice(-5))}</span>` : `<span class="aid none">No tag</span>`;
 function matches(a, q){
   if(!q) return true;
   const hay = [a.collar,a.brand1,a.brand2,a.group,a.notes,KIND[a.kind],a.vid,a.eid,a.breed].join(' ').toLowerCase();
@@ -240,17 +246,17 @@ function renderHerd(){
   const bought = fin() ? sum(inGroup,'purchasePrice') : 0, soldFor = fin() ? sum(sold,'salePrice') : 0;
   $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>${live.length-fem.length===1?'bull':'bulls'}</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
   const q = $('#q').value.trim();
-  const rows = inGroup.filter(a=>matches(a,q)).sort(byCollar);
+  const rows = inGroup.filter(a=>matches(a,q)).sort(byTag);
   const el = $('#herdList');
   if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from the Log tab.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Log › Phone setup.':''}</div>`; return; }
   if(!rows.length){ el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
   el.innerHTML = `<div class="list">${rows.map(a=>`
     <button type="button" class="row${isSold(a)?' sold':''}" data-id="${esc(a.id)}">
-      ${collarHtml(a)}
+      ${idBox(a)}
       <span class="main">
-        <span class="line1">${brandsHtml(a) || (idHtml(a)?'':'<span class="muted">No brand</span>')}${idHtml(a)}
+        <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}${fittedIcon(a)}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
-          ${isSold(a)?'<span class="pill sold">Sold</span>': a.collar ? (a.collarOn?'<span class="pill ok">Fitted</span>':'<span class="pill warn">Not fitted</span>') : ''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
+          ${isSold(a)?'<span class="pill sold">Sold</span>':''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
         <span class="line2">${esc(a.group||'No group')}${a.notes?' · '+esc(a.notes):''}</span>
       </span>
       <span class="when">${esc(ago(a.updatedAt))}</span>
@@ -319,7 +325,7 @@ function renderBulls(){
   el.innerHTML = bs.map(b=>{
     const xs=expsForBull(b.id), open=xs.filter(x=>!x.end);
     return `<div class="card">
-      <h3>${collarHtml(b)} ${brandsHtml(b)} ${idHtml(b)} ${open.length?'<span class="pill ok">Out with cows</span>':'<span class="pill">Not out</span>'}</h3>
+      <h3>${idBox(b)} ${brandsHtml(b)} ${fittedIcon(b)} ${open.length?'<span class="pill ok">Out with cows</span>':'<span class="pill">Not out</span>'}</h3>
       ${xs.length? xs.map(x=>`<div style="display:flex;flex-direction:column;gap:6px">${expLine(x,false)}
           <div class="bar">${!x.end?`<button type="button" class="btn" data-pull="${esc(x.id)}">Pull bull</button>`:''}<button type="button" class="btn" data-cows="${esc(x.id)}">See cows</button></div></div>`).join('') : '<div class="small muted">No cows recorded with this bull yet.</div>'}
       <div class="bar"><button type="button" class="btn primary" data-turn="${esc(b.id)}">Put with cows</button><button type="button" class="btn" data-open="${esc(b.id)}">Bull details</button></div>
@@ -843,8 +849,8 @@ function openExposure(bullId, presetCows){
       <div class="seg" id="e-mode"><button type="button" data-m="group" aria-pressed="${mode==='group'}">Whole group</button><button type="button" data-m="pick" aria-pressed="${mode==='pick'}">Pick cows</button></div>
       <div id="e-groupbox" ${mode!=='group'?'hidden':''}><label class="f">Group<select id="e-group">${g.map(x=>`<option>${esc(x)}</option>`).join('')||'<option value="">No groups yet</option>'}</select></label></div>
       <div id="e-pickbox" ${mode!=='pick'?'hidden':''}>
-        <input id="e-filter" type="search" placeholder="Filter by collar, brand or group">
-        <div class="picklist" id="e-pick" style="margin-top:8px">${females().sort(byCollar).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${presetCows&&presetCows.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>
+        <input id="e-filter" type="search" placeholder="Filter by tag, brand or group">
+        <div class="picklist" id="e-pick" style="margin-top:8px">${females().sort(byTag).map(c=>`<label data-s="${esc([c.vid,c.collar,c.brand1,c.brand2,c.group].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${presetCows&&presetCows.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>
       </div>
       <div class="small muted" id="e-count"></div>
       <div class="grid2">
@@ -889,10 +895,10 @@ function openPull(xid){
 }
 function openCows(xid){
   const x=S.exposures.get(xid); if(!x) return; const b=S.animals.get(x.bullId);
-  const cows=(x.cowIds||[]).map(id=>S.animals.get(id)||{id,collar:'',kind:'cow',deleted:true}).sort(byCollar);
+  const cows=(x.cowIds||[]).map(id=>S.animals.get(id)||{id,collar:'',kind:'cow',deleted:true}).sort(byTag);
   openSheet(`<div class="sheet-h"><h2>${esc(label(b))}</h2><button class="x" type="button" aria-label="Close">×</button></div>
     <div class="small muted">${esc(x.group||'Selected cows')} · ${esc(fmtDate(x.start))} – ${x.end?esc(fmtDate(x.end)):'still in'}${x.note?' · '+esc(x.note):''}</div>
-    <div class="list">${cows.map(c=>`<button type="button" class="row" ${c.deleted?'disabled':`data-id="${esc(c.id)}"`}>${collarHtml(c)}<span class="main"><span class="line1">${c.deleted?'<span class="muted">Deleted animal</span>':brandsHtml(c)||'<span class="muted">No brand</span>'}</span><span class="line2">${esc(c.group||'')}</span></span><span></span></button>`).join('')}</div>`);
+    <div class="list">${cows.map(c=>`<button type="button" class="row" ${c.deleted?'disabled':`data-id="${esc(c.id)}"`}>${c.deleted?'<span class="aid none">—</span>':idBox(c)}<span class="main"><span class="line1">${c.deleted?'<span class="muted">Deleted animal</span>':(brandsHtml(c)||'<span class="muted">No brand</span>')+fittedIcon(c)}</span><span class="line2">${esc(c.group||'')}</span></span><span></span></button>`).join('')}</div>`);
   $('#sheet .list').addEventListener('click', e=>{ const r=e.target.closest('[data-id]'); if(r) openAnimal(r.dataset.id); });
 }
 
@@ -929,8 +935,8 @@ const yearOf = d => d ? String(d).slice(0,4) : '';
 const pct = (a, b) => b ? (a/b*100) : null;
 const fmtPct = p => p==null ? '—' : (p>0?'+':'')+p.toFixed(1)+'%';
 function animalPicker(id, list, checked){
-  return `<input id="${id}-filter" type="search" placeholder="Filter by collar, brand or group">
-    <div class="picklist" id="${id}" style="margin-top:8px">${list.sort(byCollar).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group,c.vid,KIND[c.kind]].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${checked&&checked.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>`;
+  return `<input id="${id}-filter" type="search" placeholder="Filter by tag, brand or group">
+    <div class="picklist" id="${id}" style="margin-top:8px">${list.sort(byTag).map(c=>`<label data-s="${esc([c.collar,c.brand1,c.brand2,c.group,c.vid,KIND[c.kind]].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(c.id)}" ${checked&&checked.includes(c.id)?'checked':''}> <span>${esc(label(c))} ${c.brand1?'· '+esc(c.brand1):''} <span class="muted small">${esc(c.group||'')}</span></span></label>`).join('')}</div>`;
 }
 function wirePicker(id){
   const f=$('#'+id+'-filter'); f && f.addEventListener('input', e=>{ const q=e.target.value.toLowerCase().trim(); document.querySelectorAll('#'+id+' label').forEach(l=>l.hidden = !!q && !l.dataset.s.includes(q)); });
@@ -1054,7 +1060,7 @@ function breedRow(a, b){
   const [txt,cls]=BSTATUS[b.status];
   const win = b.status==='calved' ? `Calved ${fmtDate(b.calving.date)}` : b.status==='open' ? `Checked open ${fmtDate(b.check.date)}` : b.from ? `Due ${shortDate(b.from)} – ${shortDate(b.to)}` : '';
   const bull = b.ex ? (b.ex.bullId ? label(S.animals.get(b.ex.bullId)) : 'AI / no bull') : '';
-  return `<button type="button" class="row" data-breed="${esc(a.id)}">${collarHtml(a)}<span class="main"><span class="line1">${brandsHtml(a)||'<span class="muted">No brand</span>'} <span class="pill ${cls}">${txt}</span></span><span class="line2">${esc(win)}${bull?' · '+esc(bull):''}</span></span><span></span></button>`;
+  return `<button type="button" class="row" data-breed="${esc(a.id)}">${idBox(a)}<span class="main"><span class="line1">${brandsHtml(a)||'<span class="muted">No brand</span>'}${fittedIcon(a)} <span class="pill ${cls}">${txt}</span></span><span class="line2">${esc(win)}${bull?' · '+esc(bull):''}</span></span><span></span></button>`;
 }
 function renderBreeding(){
   $('#gestNote').textContent = `Calving windows use a ${gestation()}-day gestation. Real calving can land about 10 days either side.`;
