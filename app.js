@@ -27,26 +27,57 @@ const LS = {
   get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } },
   set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch{ return false; } }
 };
-const K = { mirror:'herdbook.app.mirror', outbox:'herdbook.app.outbox', cfg:'herdbook.app.config' };
-const mirror = LS.get(K.mirror, {});
-const COLS = ['animals','exposures','collars','treatments','expenses','preg'];
-COLS.forEach(c=>{ mirror[c] = mirror[c] || {}; });
-mirror.history = mirror.history || []; mirror.rev = mirror.rev || 0;
-let outbox = LS.get(K.outbox, []);
-let conflicts = LS.get('herdbook.app.conflicts', []);
-const saveConflicts = () => LS.set('herdbook.app.conflicts', conflicts);
-let inflight = 0;   // outbox entries currently being sent; never merge into these
-const cfg = LS.get(K.cfg, {});
+const cfg = LS.get('herdbook.app.config', {});
+cfg.ranches = cfg.ranches || {};   // every ranch this phone has joined: code -> {name, role, crewCode}
+// Each ranch keeps its own copy on the phone, so you can switch between ranches (even with no signal) without losing unsent changes.
+// A phone that hasn't joined a ranch uses the plain keys.
+const K = {
+  cfg:'herdbook.app.config',
+  get mirror(){ return 'herdbook.app.mirror'+(cfg.code?'@'+cfg.code:''); },
+  get outbox(){ return 'herdbook.app.outbox'+(cfg.code?'@'+cfg.code:''); },
+  get conflicts(){ return 'herdbook.app.conflicts'+(cfg.code?'@'+cfg.code:''); },
+};
+// Phones from before ranches were kept apart: their copy belongs to the ranch they were on.
+try{
+  if(cfg.code && !cfg.split && localStorage.getItem(K.mirror)===null){
+    [['herdbook.app.mirror',K.mirror],['herdbook.app.outbox',K.outbox],['herdbook.app.conflicts',K.conflicts]].forEach(([a,b])=>{ const v=localStorage.getItem(a); if(v!==null){ localStorage.setItem(b,v); localStorage.removeItem(a); } });
+  }
+  if(cfg.code && !cfg.split){ cfg.ranches[cfg.code] = cfg.ranches[cfg.code] || {name:cfg.ranchName||'', role:cfg.role||'', crewCode:cfg.crewCode||''}; }
+  cfg.split = 1;
+}catch{}
+const remember = () => { if(cfg.code){ cfg.ranches[cfg.code] = {name:cfg.ranchName||'', role:cfg.role||'', crewCode:cfg.crewCode||''}; } };
 let storageOk = LS.set('herdbook.app.probe', 1);
-S.lastSync = mirror.at || 0;
-
 // A setup link can carry the sync address (s) and farm code (k).
+let linkCode = '';
 try{
   const p = new URLSearchParams(location.search);
   if(p.get('s')) cfg.url = p.get('s');
-  if(p.get('k')) cfg.code = p.get('k');
-  if(p.get('s') || p.get('k')) LS.set(K.cfg, cfg);
+  if(p.get('k')) linkCode = String(p.get('k')).trim().toLowerCase();
 }catch{}
+if(linkCode && linkCode!==cfg.code){
+  remember();
+  const fromNone = !cfg.code;
+  const was = [LS.get(K.mirror,null), LS.get(K.outbox,null), LS.get(K.conflicts,null)];
+  cfg.code = linkCode; const r = cfg.ranches[linkCode] || {}; cfg.ranchName=r.name||''; cfg.role=r.role||undefined; cfg.crewCode=r.crewCode||'';
+  if(!cfg.role) delete cfg.role;
+  // Records kept on a phone with no ranch go with it to the first ranch it joins.
+  if(fromNone && was[0] && LS.get(K.mirror,null)===null){ LS.set(K.mirror,was[0]); if(was[1]) LS.set(K.outbox,was[1]); if(was[2]) LS.set(K.conflicts,was[2]); }
+}
+LS.set(K.cfg, cfg);
+const mirror = {};
+const COLS = ['animals','exposures','collars','treatments','expenses','preg'];
+let outbox = [], conflicts = [];
+function loadRanchData(){
+  Object.keys(mirror).forEach(k=>delete mirror[k]); Object.assign(mirror, LS.get(K.mirror, {}));
+  COLS.forEach(c=>{ mirror[c] = mirror[c] || {}; });
+  mirror.history = mirror.history || []; mirror.rev = mirror.rev || 0;
+  outbox = LS.get(K.outbox, []); conflicts = LS.get(K.conflicts, []);
+  S.lastSync = mirror.at || 0;
+}
+loadRanchData();
+const saveConflicts = () => LS.set(K.conflicts, conflicts);
+let inflight = 0;   // outbox entries currently being sent; never merge into these
+
 const syncUrl = () => cfg.url || SYNC_URL;
 const me = () => cfg.name || 'Someone';
 try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch{}
@@ -153,7 +184,7 @@ async function sync(){
       }
       outbox.splice(0, batch.length); saveOutbox();
       mergeChanges(res.changes); mirror.rev = res.rev || mirror.rev;
-      if(res.ranch!==undefined && (res.ranch!==cfg.ranchName || res.role!==cfg.role || (res.crewCode||'')!==(cfg.crewCode||''))){ cfg.ranchName=res.ranch; cfg.role=res.role; cfg.crewCode=res.crewCode||''; LS.set(K.cfg,cfg); }
+      if(res.ranch!==undefined && (res.ranch!==cfg.ranchName || res.role!==cfg.role || (res.crewCode||'')!==(cfg.crewCode||''))){ cfg.ranchName=res.ranch; cfg.role=res.role; cfg.crewCode=res.crewCode||''; remember(); LS.set(K.cfg,cfg); }
       S.lastSync = Date.now(); lastErr=''; netDown=false; saveMirror();
     } while(outbox.length);
   }catch(e){
@@ -179,7 +210,7 @@ function updateSync(){
   else if(lastErr){ t = n ? `${n} waiting · sync problem` : 'Sync problem'; off=true; }
   else if(n) t = `${n} change${n>1?'s':''} waiting to send`;
   else t = S.lastSync ? 'Synced '+ago(S.lastSync) : 'Ready';
-  el.textContent=(cfg.ranchName?cfg.ranchName+' · ':'')+t; el.classList.toggle('off',off);
+  el.textContent=t; el.classList.toggle('off',off);
   const net=$('#net'), down=offlineNow(); net.textContent = down ? 'Offline' : 'Online'; net.classList.toggle('off', down);
   renderSwapBar();
   $('#setupBanner').hidden = !!(syncUrl() && cfg.code);
@@ -634,7 +665,7 @@ function openShare(intro){
       if(navigator.onLine===false){ toast('Making a new crew link needs signal'); return; }
       rs.disabled=true; let res=null;
       try{ res=await post({action:'resetCrewCode', code:cfg.code}); }catch{}
-      if(res && res.ok){ cfg.crewCode=res.crewCode; LS.set(K.cfg,cfg); toast('New crew link made. The old one no longer works.'); draw(); }
+      if(res && res.ok){ cfg.crewCode=res.crewCode; remember(); LS.set(K.cfg,cfg); toast('New crew link made. The old one no longer works.'); draw(); }
       else { rs.disabled=false; toast('Couldn’t make a new link. Try again with signal.'); }
     });
   };
@@ -653,8 +684,8 @@ function renderSetup(){
   const nameEl=$('#cfg-name'), urlEl=$('#cfg-url');
   if(document.activeElement!==nameEl) nameEl.value = cfg.name||'';
   if(document.activeElement!==urlEl) urlEl.value = cfg.url||SYNC_URL||'';
-  $('#ranchLine').innerHTML = cfg.code
-    ? `<div class="small muted">Ranch</div><div style="font-size:20px;font-weight:700">${esc(cfg.ranchName||'Connecting…')}</div><div class="small muted">${cfg.role==='full'?'Full access, including prices':cfg.role==='crew'?'Crew access, no prices':''}</div><div style="margin-top:8px"><button type="button" class="btn primary" id="shareBtn">Share this ranch</button></div>`
+  if(document.activeElement && document.activeElement.id==='ranchPick'){} else $('#ranchLine').innerHTML = cfg.code
+    ? `<div class="small muted">Ranch</div>${ranchNameHtml()}<div class="small muted">${cfg.role==='full'?'Full access, including prices':cfg.role==='crew'?'Crew access, no prices':''}</div><div style="margin-top:8px;display:flex;flex-direction:column;align-items:flex-start;gap:10px"><button type="button" class="btn primary" id="shareBtn">Share this ranch</button><button type="button" class="linkbtn" style="padding:0" id="addRanch">Join or start another ranch</button></div>`
     : `<b>Not part of a ranch yet.</b> <button type="button" class="btn" id="joinNow">Join or start a ranch</button>`;
   st.textContent = !(syncUrl()&&cfg.code) ? 'Changes are kept on this phone only until it joins a ranch.'
     : lastErr ? lastErr
@@ -663,21 +694,43 @@ function renderSetup(){
 }
 $('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#shareBtn')) openShare(); });
 $('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#joinNow')) openStart(true); });
+// The ranch name. On a phone in more than one ranch it is a dropdown to switch between them.
+// Each ranch keeps its own copy, so switching works with no signal once a ranch has loaded.
+function ranchNameHtml(){
+  const list=Object.entries(cfg.ranches||{}).sort((a,b)=>(a[1].name||'').localeCompare(b[1].name||''));
+  if(list.length<2) return `<div class="rname">${esc(cfg.ranchName||'Connecting…')}</div>`;
+  const unsent = code => code===cfg.code ? outbox.length : (LS.get('herdbook.app.outbox@'+code,[])||[]).length;
+  return `<select id="ranchPick" class="rname rpick" aria-label="Ranch">${list.map(([code,r])=>{ const n=unsent(code);
+    return `<option value="${esc(code)}" ${code===cfg.code?'selected':''}>${esc(r.name||'Ranch')}${n?` (${n} unsent)`:''}</option>`; }).join('')}</select>`;
+}
+$('#setupCard').addEventListener('change', e=>{
+  if(e.target.id!=='ranchPick') return;
+  const code=e.target.value; e.target.blur();
+  const err=switchTo(code); if(err){ toast(err); renderSetup(); return; }
+  toast(`Switched to ${cfg.ranchName||'ranch'}`); sync();
+});
+$('#setupCard').addEventListener('click', e=>{ if(e.target.closest('#addRanch')) openStart(true); });
+$('#swapLog').addEventListener('click', ()=>openSwap());
 $('#cfg-save').addEventListener('click', ()=>{ cfg.name=$('#cfg-name').value.trim(); LS.set(K.cfg,cfg); toast('Saved'); renderSetup(); });
 $('#cfg-url-save').addEventListener('click', ()=>{ const u=$('#cfg-url').value.trim(); if(u && u!==SYNC_URL) cfg.url=u; else delete cfg.url; LS.set(K.cfg,cfg); lastErr=''; toast('Saved'); renderSetup(); sync(); });
 $('#syncNow').addEventListener('click', ()=>{ if(!(syncUrl()&&cfg.code)){ openStart(true); return; } sync(); });
-$('#switchRanch').addEventListener('click', ()=>openStart(true));
 
 // Move this phone to a different ranch. Never throws away unsent changes from a ranch it already belongs to.
 function switchTo(code, ranchName){
   code = String(code||'').trim().toLowerCase();
   if(!code) return 'Enter the ranch code.';
-  if(code===cfg.code){ if(ranchName) cfg.ranchName=ranchName; LS.set(K.cfg,cfg); return ''; }
-  if(cfg.code && outbox.length) return `This phone has ${outbox.length} change${outbox.length>1?'s':''} for ${cfg.ranchName||'its ranch'} that haven’t been sent yet. Get signal and sync before switching.`;
-  if(cfg.code){ COLS.forEach(c=>{ mirror[c]={}; }); mirror.history=[]; outbox=[]; saveOutbox(); conflicts=[]; saveConflicts(); }
-  mirror.rev=0; S.lastSync=0; saveMirror();
-  cfg.code=code; cfg.ranchName=ranchName||''; delete cfg.role; delete cfg.crewCode; LS.set(K.cfg,cfg); lastErr='';
-  recompute(); renderSetup();
+  if(code===cfg.code){ if(ranchName){ cfg.ranchName=ranchName; remember(); } LS.set(K.cfg,cfg); return ''; }
+  if(syncing) return 'This phone is syncing. Try again in a moment.';
+  // Save this ranch's copy straight away, then open the other one.
+  clearTimeout(mirrorTimer); mirror.at=S.lastSync; LS.set(K.mirror,mirror); saveOutbox(); saveConflicts(); remember();
+  const fromNone = !cfg.code;
+  cfg.code=code; const r=cfg.ranches[code]||{};
+  cfg.ranchName=ranchName||r.name||''; cfg.crewCode=r.crewCode||''; if(r.role) cfg.role=r.role; else delete cfg.role;
+  remember(); LS.set(K.cfg,cfg); lastErr='';
+  // Records kept on a phone with no ranch go with it to the first ranch it joins.
+  if(fromNone && LS.get(K.mirror,null)===null){ LS.set(K.mirror,mirror); LS.set(K.outbox,outbox); LS.set(K.conflicts,conflicts); }
+  loadRanchData();
+  recompute(); renderSetup(); renderConflictBar();
   return '';
 }
 function openStart(force){
@@ -720,7 +773,6 @@ function openStart(force){
     }
     const ranch=$('#st-ranch').value.trim(), signup=$('#st-signup').value.trim();
     if(!ranch || !signup){ say('Enter the ranch name and the sign-up code.'); return; }
-    if(cfg.code && outbox.length){ say(`This phone has ${outbox.length} unsent changes for ${cfg.ranchName||'its ranch'}. Sync before starting a new ranch.`); return; }
     if(navigator.onLine===false){ say('Starting a ranch needs signal. Try again when you have it.'); return; }
     const go=$('#st-go'); go.disabled=true; say('Creating the ranch…', true);
     let res=null;

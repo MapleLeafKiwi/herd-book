@@ -201,6 +201,9 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .help summary::-webkit-details-marker{display:none}
 .help .i{color:var(--primary);flex:none}
 .help ul{margin:6px 0 0;padding:12px 14px 12px 30px;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;gap:6px}
+.rname{font-size:20px;font-weight:700}
+select.rpick{width:auto;max-width:100%;min-height:44px;padding:6px 36px 6px 10px;margin-left:-10px;border-color:transparent;background:transparent;-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 12px) 55%;background-size:6px 6px;background-repeat:no-repeat;cursor:pointer}
+select.rpick:hover{border-color:var(--line)}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -297,7 +300,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
   </section>
 
   <section data-view="log" hidden>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li>In more than one ranch? Tap the ranch name to switch. Each ranch keeps its own copy on this phone.</li><li><b>Swap with nearby phone</b> passes changes between phones when there’s no signal.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
     <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">
       <div id="ranchLine"></div>
@@ -305,13 +308,17 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
       <label class="f">Your name (shown in the change log)<input id="cfg-name" type="text" autocomplete="name"></label>
       <div class="fab-row"><button class="btn primary" id="cfg-save" type="button">Save name</button><button class="btn" id="syncNow" type="button">Sync now</button></div>
       <div class="small" id="cfg-status"></div>
-      <details><summary class="small">Change ranch or sync address</summary>
+      <details><summary class="small">Change sync address</summary>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-          <div><button class="btn" id="switchRanch" type="button">Join or start a different ranch</button></div>
           <label class="f">Sync address<input id="cfg-url" type="url" inputmode="url"></label>
           <div><button class="btn" id="cfg-url-save" type="button">Save sync address</button></div>
         </div>
       </details>
+    </div>
+    <h2>No signal?</h2>
+    <div class="card">
+      <div class="small muted">Pass your changes to a phone next to you, and get theirs, by showing QR codes screen to screen. Whoever gets signal first sends everything to the sheet.</div>
+      <div><button class="btn primary" id="swapLog" type="button">Swap with nearby phone</button></div>
     </div>
     <h2>Spreadsheets &amp; backup</h2>
     <div class="card">
