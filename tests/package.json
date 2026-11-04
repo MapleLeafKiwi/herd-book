@@ -3,7 +3,7 @@
   "private": true,
   "description": "End-to-end tests: real Code.gs in a fake Google Sheet, the app in headless Chromium.",
   "scripts": {
-    "test": "node sync.test.js && node swap.test.js && node scan.test.js && node fit.test.js && node groups.test.js && node order.test.js && node work.test.js"
+    "test": "node sync.test.js && node swap.test.js && node scan.test.js && node fit.test.js && node groups.test.js && node order.test.js && node work.test.js && node scanrun.test.js"
   },
   "devDependencies": {
     "jsqr": "1.4.0",

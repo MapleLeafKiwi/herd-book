@@ -966,7 +966,7 @@ function openStart(force){
 
 // ---------- sheet ----------
 function openSheet(html){ $('#sheet').innerHTML=html; $('#scrim').hidden=false; }
-function closeSheet(){ stopSwap(); $('#scrim').hidden=true; $('#sheet').innerHTML=''; }
+function closeSheet(){ stopSwap(); stopRun(); $('#scrim').hidden=true; $('#sheet').innerHTML=''; }
 $('#scrim').addEventListener('click', e=>{ if(e.target.id==='scrim' || e.target.closest('.x')) closeSheet(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('#scrim').hidden) closeSheet(); });
 
@@ -1991,7 +1991,8 @@ function openOrder(){
       <label class="f" for="ord-nums">Type the numbers in order</label>
       <div class="inrow"><input id="ord-nums" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 101-120, 95, 88"><button class="btn primary" type="button" id="ord-add">Add</button></div>
       <div id="ord-msg"></div>
-      <div class="f">Or scan them one by one<div>${camButton('ord-photo')}</div></div>
+      <button type="button" class="btn primary fitgo" id="ord-run">Scan in order</button>
+      <div class="f">Or one photo at a time<div>${camButton('ord-photo')}</div></div>
       <div id="ord-scan"></div>
     </div>
     <div id="ord-line"></div>
@@ -2063,7 +2064,8 @@ function openOrder(){
     d.row.style.transform = lift(dy,true);
   }
   const tick=()=>{ if(!drag || drag.done) return; const sh=$('#sheet'), b=sh.getBoundingClientRect();
-    if(drag.y<b.top+70) sh.scrollTop-=12; else if(drag.y>b.bottom-70) sh.scrollTop+=12;
+    // scroll only when dragging toward an edge, not just because the collar was picked up near one
+    if(drag.y<b.top+70 && drag.y<drag.y0-10) sh.scrollTop-=12; else if(drag.y>b.bottom-70 && drag.y>drag.y0+10) sh.scrollTop+=12;
     layout(); requestAnimationFrame(tick); };
   function finish(){
     if(!drag || drag.done) return; const d=drag; d.done=true;
@@ -2093,11 +2095,137 @@ function openOrder(){
     e.preventDefault(); const id=h.closest('[data-oc]').dataset.oc, L=collarLine(), i=L.findIndex(c=>c.id===id), j=e.key==='ArrowUp'?i-1:i+1;
     if(i<0 || j<0 || j>=L.length) return; const [c]=L.splice(i,1); L.splice(j,0,c); setLine(L); draw();
     const g=$(`#ord-line [data-oc="${id}"] [data-grip]`); if(g) g.focus(); });
+  $('#ord-run').addEventListener('click', openScanRun);
   $('#ord-clear').addEventListener('click', e=>{ const b=e.currentTarget;
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again to clear'; return; }
     b.classList.remove('armed'); b.textContent='Clear collar order'; setLine([]); logChange('order','collar','Collar order cleared','cleared',[]); draw(); });
   draw();
 }
+// ---- Scan in order (Order collars only): a camera view with one shutter; each photo takes the next place in line
+// straight away and is read in the background, one at a time, by the same reader as every photo button (readSerial).
+// Photos live only in memory until the scan is finished; they are never synced.
+let run=null, runReader=null;                       // runReader: test hook to stand in for the scanner
+const nbDigits = s => String(s||'').replace(/\D/g,'').replace(/^0+/,'');
+const collarByRead = n => collarFor(n) || collarList().find(c=>c.neckband && nbDigits(n) && nbDigits(c.neckband)===nbDigits(n)) || null;
+function stopRun(){ if(!run) return; if(run.stream) run.stream.getTracks().forEach(t=>t.stop()); run.rows.forEach(r=>{ try{ URL.revokeObjectURL(r.url); }catch{} }); run=null; }
+async function readForRun(blob){
+  if(runReader) return runReader(blob);
+  const r=await readSerial(blob, ()=>{});
+  return Array.isArray(r) ? {cands:null} : {cands:r.cands};
+}
+async function pumpRun(){
+  const me_=run; if(!me_ || me_.busy) return;
+  const row=me_.rows.find(r=>r.reading); if(!row) return;
+  me_.busy=true;
+  let res; try{ res=await readForRun(row.blob); }catch{ res={cands:null}; }
+  me_.busy=false; if(run!==me_) return;
+  row.reading=false; row.failed=!res || !res.cands; row.cands=(res&&res.cands)||[];
+  row.found=[...new Map(row.cands.map(c=>collarByRead(c.n)).filter(Boolean).map(c=>[c.id,c])).values()];
+  drawRun(); pumpRun();
+}
+function addRunPhoto(blob){
+  if(!run) return;
+  run.rows.push({id:rid(), blob, url:URL.createObjectURL(blob), reading:true, cands:[], found:[], picked:null});
+  drawRun(); pumpRun();
+}
+// What each row stands for, in photo order: ok rows give the collars; the rest say why they need checking.
+function runStatus(){
+  const inLine=new Set(collarLine().map(c=>c.id)), seen=new Set(), w=wearers();
+  return run.rows.map(r=>{
+    if(r.reading) return {state:'reading'};
+    let c = r.picked ? S.collars.get(r.picked) : null;
+    if(!c){
+      if(r.failed) return {state:'check', reason:'Scanner not ready: type the number'};
+      if(!r.cands.length) return {state:'check', reason:'No number found'};
+      if(r.found.length>1) return {state:'check', reason:'More than one possible number'};
+      if(!r.found.length) return {state:'check', reason: r.cands.length>1 ? 'More than one possible number' : `Not in the collar list (${r.cands[0].n})`};
+      c=r.found[0];
+    }
+    if(!lineable(c,w)) return {state:'check', collar:c, reason:`Collar ${c.number} is ${c.status==='lost'?'lost':'fitted'}`};
+    if(inLine.has(c.id) || seen.has(c.id)) return {state:'check', collar:c, reason:`Collar ${c.number} is already in the line`};
+    seen.add(c.id); return {state:'ok', collar:c};
+  });
+}
+function drawRun(){
+  if(!run || !$('#sr')) return;
+  const st=runStatus(), n=run.rows.length, chk=st.filter(x=>x.state==='check').length, rd=st.filter(x=>x.state==='reading').length;
+  $('#sr-count').innerHTML = `<b>${n}</b> scanned, <b>${chk}</b> to check${rd?` · reading ${rd}`:''}`;
+  $('#sr-rows').innerHTML = run.rows.map((r,i)=>{ const s=st[i];
+    const body = s.state==='reading' ? '<span class="muted">Reading…</span>'
+      : s.state==='ok' ? collarHtml({collar:s.collar.number})
+      : `<span class="pill warn">Check</span> <span class="small">${esc(s.reason)}</span>`;
+    const fix = run.fix===r.id && s.state!=='reading' ? runFixHtml(r) : '';
+    return `<div class="srrow ${s.state}" data-sr="${esc(r.id)}"><button type="button" class="srmain" data-srtap="${esc(r.id)}"><span class="ordn">${i+1}</span><img src="${r.url}" alt="" class="srthumb">${body}</button>${fix}</div>`; }).reverse().join('');
+  $('#sr-done').disabled = !n || rd>0;
+  $('#sr-done').textContent = rd ? `Reading ${rd}…` : 'Done';
+}
+function runFixHtml(r){
+  const opts=[]; r.cands.forEach(c=>{ opts.push(c.n); if(c.near) opts.push(c.near); });
+  return `<div class="srfix"><img src="${r.url}" alt="Collar photo" class="srbig">
+    ${opts.length?`<div class="small"><b>Tap the right number</b></div><div class="fab-row">${[...new Set(opts)].map(n=>{ const c=collarByRead(n), near=r.cands.some(x=>x.near===n);
+      return `<button type="button" class="btn ${c?'primary':''}" data-srpick="${esc(n)}">${near?'Did you mean ':''}${esc(n)}${near?'?':''}${c?'':' · not in list'}</button>`; }).join('')}</div>`:''}
+    <div class="inrow"><input type="text" inputmode="numeric" autocomplete="off" placeholder="Type the collar number" data-srtype><button type="button" class="btn primary" data-sruse>Use</button></div>
+    <div data-srmsg></div>
+    <div><button type="button" class="btn danger" data-srrm>Remove</button></div></div>`;
+}
+async function openScanRun(){
+  stopRun(); run={rows:[], busy:false, stream:null, fix:null};
+  openSheet(`<div id="sr" style="display:flex;flex-direction:column;gap:10px">
+    <div class="sheet-h"><h2>Scan in order</h2><button type="button" class="btn" id="sr-cancel">Cancel</button></div>
+    <div class="srcam"><video id="sr-vid" playsinline muted class="swapvid"></video><button type="button" class="shutter" id="sr-shot" aria-label="Take photo of the next collar"></button></div>
+    <div class="small muted">Take a photo of each collar in the order they’re laid out. Each one goes to the end of the line.</div>
+    <div class="srcount" id="sr-count"></div>
+    <div id="sr-ask"></div>
+    <div id="sr-rows" class="fit-list"></div>
+    <div class="fab-row"><button type="button" class="btn primary fitgo" id="sr-done" disabled>Done</button></div>
+  </div>`);
+  const myRun=run; drawRun();
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera');
+    const stream=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1920}, height:{ideal:1080} }, audio:false });
+    if(run!==myRun){ stream.getTracks().forEach(t=>t.stop()); return; }
+    run.stream=stream; const v=$('#sr-vid'); v.srcObject=stream; await v.play().catch(()=>{});
+  }catch{
+    if(run!==myRun) return;
+    stopRun(); openOrder();
+    $('#ord-msg').innerHTML='<div class="notice warn">The camera couldn’t open here. Use <b>Photo</b> instead: each collar goes to the end of the line in the order you take them.</div>';
+    return;
+  }
+  $('#sr-shot').addEventListener('click', ()=>{
+    const v=$('#sr-vid'); if(!v || !v.videoWidth) return;
+    const k=Math.min(1, 1600/Math.max(v.videoWidth, v.videoHeight)), c=document.createElement('canvas');
+    c.width=Math.round(v.videoWidth*k); c.height=Math.round(v.videoHeight*k); c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+    const b=$('#sr-shot'); b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),150);
+    c.toBlob(blob=>{ if(blob) addRunPhoto(blob); }, 'image/jpeg', 0.85);
+  });
+}
+function finishRun(){
+  const oks=runStatus().filter(s=>s.state==='ok').map(s=>s.collar);
+  const L=collarLine(); oks.forEach(c=>L.push(c)); if(oks.length) setLine(L);
+  stopRun(); openOrder();
+  $('#ord-msg').innerHTML=`<div class="notice ok">${plural(oks.length,'collar')} added to the end of the line.</div>`;
+}
+document.addEventListener('click', e=>{
+  if(!run || !e.target.closest('#sr')) return;
+  if(e.target.closest('#sr-cancel')){ const b=e.target.closest('#sr-cancel');
+    if(run.rows.length && !b.classList.contains('armed')){ b.classList.add('armed','danger'); b.textContent='Tap again to cancel'; return; }
+    stopRun(); openOrder(); return; }
+  const tap=e.target.closest('[data-srtap]');
+  if(tap){ const r=run.rows.find(x=>x.id===tap.dataset.srtap), i=run.rows.indexOf(r), s=runStatus()[i];
+    if(r && s.state==='check') { run.fix = run.fix===r.id ? null : r.id; drawRun(); } return; }
+  const rowEl=e.target.closest('[data-sr]'); const r=rowEl && run.rows.find(x=>x.id===rowEl.dataset.sr);
+  const use=n=>{ const c=collarByRead(n); if(!c){ rowEl.querySelector('[data-srmsg]').innerHTML=`<div class="notice warn">${esc(n)} isn’t in your collar list.</div>`; return; } r.picked=c.id; run.fix=null; drawRun(); };
+  if(r && e.target.closest('[data-srpick]')) return use(e.target.closest('[data-srpick]').dataset.srpick);
+  if(r && e.target.closest('[data-sruse]')){ const n=rowEl.querySelector('[data-srtype]').value.trim(); if(n) use(n); return; }
+  if(r && e.target.closest('[data-srrm]')){ URL.revokeObjectURL(r.url); run.rows.splice(run.rows.indexOf(r),1); run.fix=null; drawRun(); return; }
+  if(e.target.closest('#sr-done')){
+    const st=runStatus(), chk=st.filter(x=>x.state==='check').length;
+    if(chk){ $('#sr-ask').innerHTML=`<div class="card"><b>${plural(chk,'photo')} still ${chk===1?'needs':'need'} checking.</b><div class="fab-row"><button type="button" class="btn primary" id="sr-fixthem">Fix them</button><button type="button" class="btn" id="sr-leave">Leave them out</button></div></div>`; $('#sr-ask').scrollIntoView({block:'nearest'}); return; }
+    finishRun(); return; }
+  if(e.target.closest('#sr-leave')){ finishRun(); return; }
+  if(e.target.closest('#sr-fixthem')){ const st=runStatus(), i=st.findIndex(x=>x.state==='check'); run.fix=run.rows[i].id; $('#sr-ask').innerHTML=''; drawRun();
+    const el=document.querySelector(`[data-sr="${run.fix}"]`); if(el) el.scrollIntoView({block:'center'}); }
+});
 $('#ordBtn').addEventListener('click', openOrder);
 $('#fNotice').addEventListener('click', e=>{ const b=e.target.closest('[data-num]'); if(b) pickCollar(b.dataset.num); });
 $('#fCows').addEventListener('click', e=>{ if(e.target.closest('[data-newhere]')) return openNewHere(); const b=e.target.closest('[data-cow]'); if(b) pickCow(b.dataset.cow); });
@@ -2585,5 +2713,5 @@ wireScan('#fcq-photo', '#fcScan', n=>{ $('#fcq').value=n; renderFit(); });
 wireScan('#fq-photo', '#fScan', n=>{ $('#fq').value=n; const x=fitCollars().find(c=>ckey(c.num)===ckey(n)); if(x) pickCollar(x.num); else renderFit(); });
 warmOcr(); window.addEventListener('online', warmOcr);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
-window.__herdbook = { sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg, swapFrames, swapCollector, swapReceive };
+window.__herdbook = { scanRun:{ add:b=>addRunPhoto(b), setReader:f=>{ runReader=f||null; }, rows:()=>run?run.rows.length:0 }, sync, state:S, outbox:()=>outbox, conflicts:()=>conflicts, cfg, swapFrames, swapCollector, swapReceive };
 })();
