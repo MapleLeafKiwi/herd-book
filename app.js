@@ -247,7 +247,12 @@ const brandsHtml = a => [a.brand1,a.brand2].filter(Boolean).map(b=>`<span class=
 // The visual tag, shown beside the brand.
 const idHtml = a => (a.vid||a.eid) ? `<span class="idtag">Tag ${esc(a.vid||a.eid)}</span>` : '';
 // In lists an animal is shown by its visual tag; a small collar icon means its collar is on.
-const COLLAR_ICON = '<span class="cicon" role="img" aria-label="Collar fitted" title="Collar fitted"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4.5 7.5a7.5 7.5 0 0 0 15 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><rect x="8.5" y="13.5" width="7" height="8" rx="1.6" fill="currentColor"/></svg></span>';
+const COLLAR_ICON = '<span class="cicon" role="img" aria-label="Collar fitted" title="Collar fitted"><svg viewBox="0 0 24 30" width="24" height="30" aria-hidden="true">'
+  + '<rect x="8" y="0.8" width="8" height="11" rx="2" fill="var(--strap)" stroke="var(--strap-edge)" stroke-width="0.8"/><circle cx="12" cy="4.2" r="1.4" fill="var(--surface)"/>'
+  + '<circle cx="12" cy="19.6" r="9.8" fill="var(--tag)"/>'
+  + '<circle cx="12" cy="19.6" r="5.9" fill="var(--strap)"/>'
+  + '<rect x="9" y="16.6" width="6" height="6" rx="0.7" fill="var(--panel)"/>'
+  + '<path d="M9.3 18.6h5.4M9.3 20.6h5.4" stroke="var(--panel-line)" stroke-width="0.5"/></svg></span>';
 const fittedIcon = a => a.collar && a.collarOn ? COLLAR_ICON : '';
 const idBox = a => (a.vid||a.eid) ? `<span class="aid">${esc(a.vid || '…'+String(a.eid).slice(-5))}</span>` : `<span class="aid none">No tag</span>`;
 function matches(a, q){
