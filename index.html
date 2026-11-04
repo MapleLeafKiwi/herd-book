@@ -98,7 +98,6 @@ textarea{min-height:90px;resize:vertical}
 .pill.bull{background:var(--ink);color:var(--surface)}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:28px 20px;text-align:center;color:var(--muted)}
 .empty strong{display:block;color:var(--ink);font-size:18px;margin-bottom:4px}
-.yard{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:10px}
 .ycard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .ycard.fitted{border-color:var(--ok)}
 .ycard .top{display:flex;gap:14px;align-items:center}
@@ -187,8 +186,7 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .ctile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;min-width:0;font:inherit;color:inherit}
 .ctile .who{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.ctile.free{border-style:dashed}
-.ctile.free .collar{background:var(--surface);box-shadow:inset 0 0 0 2px var(--tag);color:var(--ink)}
+.ctile.not .collar{background:var(--surface);box-shadow:inset 0 0 0 2px var(--tag);color:var(--ink)}
 .ctile.lost .collar{background:var(--sunk);color:var(--muted);text-decoration:line-through}
 .ctile.fitted{border-color:var(--ok)}
 .money{font-variant-numeric:tabular-nums}
@@ -204,6 +202,29 @@ div.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;
 .rname{font-size:20px;font-weight:700}
 select.rpick{width:auto;max-width:100%;min-height:44px;padding:6px 36px 6px 10px;margin-left:-10px;border-color:transparent;background:transparent;-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 12px) 55%;background-size:6px 6px;background-repeat:no-repeat;cursor:pointer}
 select.rpick:hover{border-color:var(--line)}
+/* fit collars: two pick lists, side by side when there's room, one at a time on a phone */
+.fitbig{display:flex;align-items:center;justify-content:center;min-height:60px;font-size:20px;text-decoration:none}
+.fit-top{display:flex;align-items:center;gap:12px}.fit-top h2{margin:0}.fit-top .btn{text-decoration:none;display:inline-flex;align-items:center;color:var(--ink)}
+.fit-sticky{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--headh,104px));z-index:3;background:var(--bg);padding-block:8px;margin-block:-8px;display:flex;flex-direction:column;gap:8px}
+.fit-switch button{min-height:52px;font-size:17px}
+.fit-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.fit-col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fit-list{display:flex;flex-direction:column;gap:8px}
+.fpick{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:8px 12px;text-align:left;background:var(--surface);border:2px solid var(--line);border-radius:12px;font:inherit;color:inherit;cursor:pointer}
+.fpick[aria-pressed="true"]{border-color:var(--primary);background:var(--ok-soft);box-shadow:0 0 0 2px var(--primary)}
+.fpick .main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.fpick .sub{font-size:14px;color:var(--muted)}
+.fpick .collar{flex:none}
+section[data-view="fit"]{padding-bottom:110px}
+.fitbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.12);padding-block:10px calc(10px + env(safe-area-inset-bottom,0px))}
+.fitbar-in{display:flex;align-items:center;gap:12px}
+.fitpair{flex:1;min-width:0;font-weight:700;font-size:17px;line-height:1.3}
+.fitpair .muted{font-weight:400}
+.fitgo{min-height:60px;min-width:120px;font-size:22px}
+@media (max-width:699px){.fit-grid{grid-template-columns:1fr}
+  section[data-fside="collar"] .fit-col[data-side="cow"], section[data-fside="cow"] .fit-col[data-side="collar"]{display:none}}
+@media (min-width:700px){.fit-switch{display:none}}
+.toast .undo{margin-left:12px;border:0;background:none;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;min-height:40px;padding:0 6px}
 .fab-row{display:flex;gap:8px;flex-wrap:wrap}
 .fab-row .btn{flex:1 1 auto}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -216,7 +237,6 @@ select.rpick:hover{border-color:var(--line)}
     <div class="hrow"><h1>Herd Book</h1><a class="net" id="net" href="#log" aria-label="Signal and sync details">Online</a></div>
     <nav>
       <a href="#herd" data-tab="herd">Herd</a>
-      <a href="#yard" data-tab="yard">Yard</a>
       <a href="#collars" data-tab="collars">Collars</a>
       <a href="#breeding" data-tab="breeding">Breeding</a>
       <a href="#health" data-tab="health">Health</a>
@@ -244,22 +264,32 @@ select.rpick:hover{border-color:var(--line)}
     <div id="herdList"></div>
   </section>
 
-  <section data-view="yard" hidden>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>For the chute when fitting collars.</li><li>Type the brand or collar number, or tap <b>Photo</b> to read the number off the collar.</li><li><b>Needs collar</b> shows the animals still to do. <b>All</b> shows everything.</li><li>Tap <b>Collar fitted ✓</b> once it’s on. <b>Fit collar</b> gives a collar to an animal that doesn’t have one yet.</li></ul></details>
-    <input id="yq" class="big-search" type="search" placeholder="Brand or collar #" autocomplete="off" inputmode="text">
-    <div class="bar">
-      <select id="yGroup" style="flex:1 1 160px;width:auto"></select>
-      <div class="seg" style="flex:1 1 220px" id="yFilter">
-        <button type="button" data-f="need" aria-pressed="true">Needs collar</button>
-        <button type="button" data-f="all" aria-pressed="false">All</button>
+  <section data-view="fit" data-fside="collar" hidden>
+    <div class="fit-top"><a class="btn" href="#collars">‹ Collars</a><h2>Fit collars</h2></div>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Pick a collar and a cow, in either order, then tap <b>Fit</b>.</li><li>Pick a cow and her collar from last season is picked for you. Pick a collar and the cow it was last on is picked for you.</li><li>Type the collar number or tap <b>Photo</b> to read it off the collar. It jumps to the top of the list.</li><li>Made a mistake? Tap <b>Undo</b> on the message that pops up.</li></ul></details>
+    <div class="fit-sticky">
+      <div class="seg fit-switch" id="fitSwitch"><button type="button" data-side="collar" aria-pressed="true">Collars</button><button type="button" data-side="cow" aria-pressed="false">Cows</button></div>
+      <div class="fit-grid">
+        <div class="fit-col" data-side="collar">
+          <div class="inrow"><input id="fq" class="big-search" type="search" placeholder="Collar #" autocomplete="off" inputmode="numeric"></div>
+          <div id="fScan"></div><div id="fNotice"></div>
+        </div>
+        <div class="fit-col" data-side="cow">
+          <div class="inrow"><input id="fcq" class="big-search" type="search" placeholder="Brand, tag or collar #" autocomplete="off"></div>
+          <select id="fGroup"></select>
+        </div>
       </div>
     </div>
-    <div id="yNotice"></div>
-    <div id="yardList" class="yard"></div>
+    <div class="fit-grid">
+      <div class="fit-col" data-side="collar"><div id="fCollars" class="fit-list"></div></div>
+      <div class="fit-col" data-side="cow"><div id="fCows" class="fit-list"></div></div>
+    </div>
+    <div class="fitbar" id="fitBar"><div class="wrap fitbar-in"><div id="fitPair" class="fitpair">Pick a collar and a cow</div><button type="button" class="btn primary fitgo" id="fitGo" disabled>Fit</button></div></div>
   </section>
 
   <section data-view="collars" hidden>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Your list of collars and where each one is.</li><li><b>+ Add collars</b> to enter numbers. A range like 1-150 works.</li><li><b>Unused</b>: not given to an animal. <b>Not fitted</b>: given but not on yet. <b>Fitted</b>: on the animal.</li><li>Tap a collar to give it to an animal, add its eShepherd serial, or mark it lost.</li><li>Collars off for the year? <b>Start new season</b> marks them all as off.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Your list of collars and where each one is.</li><li><b>Fit collars</b> to put collars on cattle at the chute.</li><li><b>Fitted</b>: on a cow now. <b>Not fitted</b>: ready to use. <b>Lost</b>: missing or out of use.</li><li>Tap a collar to mark it lost or found, take it off its cow, or add its eShepherd serial.</li><li><b>+ Add collars</b> to enter numbers. A range like 1-150 works.</li><li>Collars off for the year? <b>Start new season</b> marks them all as not fitted.</li></ul></details>
+    <a class="btn tag fitbig" href="#fit" id="fitBig">Fit collars</a>
     <div class="bar">
       <input id="cq" class="search" type="search" placeholder="Find collar #, brand or note" autocomplete="off">
       <button class="btn primary" id="cAddBtn" type="button">+ Add collars</button>
@@ -269,7 +299,7 @@ select.rpick:hover{border-color:var(--line)}
     <div id="collarList"></div>
     <div class="card" id="cSeason">
       <b>Collars off for the year?</b>
-      <div class="small muted">Start a new season to mark every fitted collar as not fitted. Each cow keeps her collar number, so she gets the same collar next time and shows up under “Needs collar” in the Yard. Fitted right now: <b id="seasonCount">0</b>.</div>
+      <div class="small muted">Start a new season to mark every fitted collar as not fitted. Each cow remembers her collar, so when you fit collars again she’s matched with the same one. Fitted right now: <b id="seasonCount">0</b>.</div>
       <div class="fab-row"><button class="btn danger" id="seasonBtn" type="button">Start new season</button><button class="btn" id="cExport" type="button">Download collar list (CSV)</button></div>
     </div>
   </section>

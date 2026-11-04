@@ -109,9 +109,9 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
 
   // B goes offline, fits collar 12 and reloads (app must still open)
   await B.context.setOffline(true);
-  await pb.goto('http://localhost:8765/?s='+encodeURIComponent(SYNC)+'&k='+CODE+'#yard').catch(e=>console.log('offline nav error', e.message));
-  ok(await pb.locator('#yardList').count()===1, 'app opens with no signal (service worker)');
-  await pb.fill('#yq','12'); await pb.click('[data-fit]');
+  await pb.goto('http://localhost:8765/?s='+encodeURIComponent(SYNC)+'&k='+CODE+'#fit').catch(e=>console.log('offline nav error', e.message));
+  ok(await pb.locator('#fCollars').count()===1, 'app opens with no signal (service worker)');
+  await pb.fill('#fq','12'); await pb.click('#fCollars [data-num="12"]'); await pb.click('#fitGo');
   ok(await pb.evaluate(()=>window.__herdbook.outbox().length)>0, 'offline change held on phone B');
   ok((await pb.textContent('#sync')).includes('No signal'), 'status says no signal: '+(await pb.textContent('#sync')));
   ok((await pb.textContent('#net'))==='Offline', 'header says Offline');
@@ -191,6 +191,14 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   await pe.click('.row[data-id]:has-text("Bar T")');
   ok(await pe.locator('#a-pp').count()===0, 'crew edit form has no price fields');
   await pe.fill('#a-notes','Checked by farmhand'); await pe.click('#af button[type=submit]'); await wait(2200);
+  // crew phones fit collars too, and the fitting screen shows no money
+  await pe.click('#addBtn'); await pe.fill('#a-b1','Crew Cow'); await pe.click('#af button[type=submit]'); await wait(300);
+  await pe.goto('http://localhost:8765/#fit'); await wait(300);
+  await pe.click('#fitSwitch [data-side=cow]'); await pe.fill('#fcq','Crew Cow'); await pe.click('#fCows [data-cow]');
+  await pe.fill('#fq','777'); await pe.click('#fNotice [data-num="777"]'); await pe.click('#fitGo'); await wait(2200);
+  ok(!(await pe.textContent('section[data-view=fit]')).includes('$') && await pe.isHidden('#navMoney'), 'crew fitting screen shows no money');
+  await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
+  ok(await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].some(a=>a.brand1==='Crew Cow' && a.collar==='777' && a.collarOn===true)), 'collar fitted on a crew phone reaches the full-access phone');
   doPost(JSON.stringify({code:CREW, since:0, ops:[{col:'animals', id:crewAnimals.find(a=>a.collar==='12').id, patch:{purchasePrice:1, notes:'Checked by farmhand'}}]}));
   await pa.evaluate(()=>window.__herdbook.sync()); await wait(500);
   const cow3 = await pa.evaluate(()=>[...window.__herdbook.state.animals.values()].find(a=>a.collar==='12'));

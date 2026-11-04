@@ -30,7 +30,7 @@ When you hand Matthew a new `Code.gs` to paste, put the real sign-up code in tha
 
 ## Features (where to look in app.js)
 
-Herd list and animal form; Yard (collar fitting, "Needs collar"); Collars (collar list, neckband serials, new season); Breeding (exposures by bull or AI, calving window = dates + gestation, default 283; preg checks; calving adds a calf); Health (treatments, withdrawal, boosters); Money (full access only: sales, purchases, expenses, profit $ and %); Log (ranch and phone setup, Share with crew or full-access QR, import/export, change log); clash chooser; offline-only "Swap with nearby phone" (changes as cycling QR codes, read by camera with jsQR); collar serial photo reading on the phone (tesseract.js in `ocr/`, digits only); spreadsheet import (SheetJS, column matching) and export, including filling eShepherd's Bulk Create file (row 1 instructions, row 2 headers, Neckband = 10-digit serial kept as text, dates dd-MM-yyyy, VID letters and digits only).
+Herd list (by visual tag, collar icon when fitted) and animal form; Collars (collar list with three statuses shown: Fitted, Not fitted, Lost — stored data unchanged: `collar`/`collarOn` on the animal, collar `status`; "Last on" for a not-fitted collar a cow still holds; take off, mark lost/found; neckband serials; new season) and the Fit collars screen (`#fit`, old `#yard` links land here: pick a collar and a cow in either order, auto-pairs last season's collar, Fit with Undo, two lists side by side on wide screens, one at a time on a phone); Log (ranch name dropdown to switch ranches, each ranch has its own copy on the phone under `…@code` keys; swap with nearby phone; share); Breeding (exposures by bull or AI, calving window = dates + gestation, default 283; preg checks; calving adds a calf); Health (treatments, withdrawal, boosters); Money (full access only: sales, purchases, expenses, profit $ and %); Log (ranch and phone setup, Share with crew or full-access QR, import/export, change log); clash chooser; offline-only "Swap with nearby phone" (changes as cycling QR codes, read by camera with jsQR); collar serial photo reading on the phone (tesseract.js in `ocr/`, digits only); spreadsheet import (SheetJS, column matching) and export, including filling eShepherd's Bulk Create file (row 1 instructions, row 2 headers, Neckband = 10-digit serial kept as text, dates dd-MM-yyyy, VID letters and digits only).
 
 ## Testing
 
@@ -38,7 +38,7 @@ Herd list and animal form; Yard (collar fitting, "Needs collar"); Collars (colla
 
 ```
 cd tests && npm install && npx playwright install chromium   # first time
-node sync.test.js && node swap.test.js && node scan.test.js
+node sync.test.js && node swap.test.js && node scan.test.js && node fit.test.js
 ```
 
 Run them before every push and add a check for each new behaviour. Screenshots land in `tests/out/` (ignored). Matthew can't test locally: he checks on his phone after a push (close and reopen the app twice to pick up an update).
