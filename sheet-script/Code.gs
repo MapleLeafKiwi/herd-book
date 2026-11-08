@@ -18,7 +18,7 @@
 const SIGNUP_CODE = 'CHANGE-ME';   // give this only to people allowed to start a ranch
 const NEW_RANCHES_ACTIVE = true;        // false = new ranches wait until you tick "Active" in the Ranches tab
 
-const TABS = { animals: 'Animals', exposures: 'Bull exposures', collars: 'Collars', treatments: 'Treatments', preg: 'Breeding records', expenses: 'Expenses', history: 'Change log' };
+const TABS = { animals: 'Animals', exposures: 'Bull exposures', collars: 'Collars', treatments: 'Treatments', preg: 'Breeding records', expenses: 'Expenses', settings: 'Settings', history: 'Change log' };
 const ORDER = {
   animals:   ['id','collar','kind','group','brand1','brand2','vid','eid','breed','birthDate','collarOn','notes','purchasePrice','purchaseDate','salePrice','saleDate','damId','createdAt','updatedAt','updatedBy'],
   exposures: ['id','bullId','group','cowIds','start','end','note','updatedAt','updatedBy'],
@@ -26,6 +26,7 @@ const ORDER = {
   treatments:['id','date','product','kind','dose','route','withdrawalDays','boosterDue','batch','givenBy','group','animalIds','cost','notes','updatedAt','updatedBy'],
   preg:      ['id','cowId','type','date','result','daysPregnant','calfSex','calfId','notes','updatedAt','updatedBy'],
   expenses:  ['id','date','category','description','group','amount','updatedAt','updatedBy'],
+  settings:  ['id','value','updatedAt','updatedBy'],
   history:   ['id','at','by','action','text','targetType','targetId','changes']
 };
 const NUM  = ['purchasePrice','salePrice','createdAt','updatedAt','at','_rev','withdrawalDays','cost','amount','daysPregnant'];

@@ -10,9 +10,9 @@ const byCollar = (a,b) => String(a.collar||'~').localeCompare(String(b.collar||'
 // Lists go by visual tag: collar numbers are long and mostly matter when fitting collars.
 const byTag = (a,b) => String(a.vid||a.eid||'~').localeCompare(String(b.vid||b.eid||'~'), undefined, {numeric:true}) || byCollar(a,b);
 const KIND = {cow:'Cow', heifer:'Heifer', bull:'Bull', steer:'Steer', calf:'Calf'};
-const FIELDS = [['kind','Type'],['collar','Collar'],['group','Group'],['brand1','Brand'],['brand2','2nd brand'],['collarOn','Collar fitted'],['notes','Notes'],
+const FIELDS = [['kind','Type'],['collar','Collar'],['group','Group'],['brand1','Brand'],['brand2','2nd brand'],['collarOn','Collar fitted'],['notes','Notes'],['died','Died'],['missing','Missing since'],
   ['vid','Visual tag (VID)'],['eid','EID / RFID'],['breed','Breed'],['birthDate','Date of birth'],
-  ['purchasePrice','Purchase price'],['purchaseDate','Purchase date'],['salePrice','Sale price'],['saleDate','Sale date']];
+  ['purchasePrice','Purchase price'],['purchaseDate','Purchase date'],['salePrice','Sale price'],['saleDate','Sale date'],['buyer','Buyer']];
 const MONEY = new Set(['purchasePrice','salePrice']);
 const DATES = new Set(['purchaseDate','saleDate']);
 const money = n => (n===''||n==null||isNaN(n)) ? '' : Number(n).toLocaleString('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:2});
@@ -20,7 +20,7 @@ const parseMoney = v => { v=String(v||'').replace(/[$,\s]/g,''); if(v==='') retu
 const rid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 const canWrite = true;
 
-const S = { animals:new Map(), exposures:new Map(), collars:new Map(), treatments:new Map(), expenses:new Map(), preg:new Map(), mYear:'', mGroup:'', cFilter:'all', history:[], loaded:true, tab:'herd', group:'', sel:null, fGroup:'', fSide:'collar', fCollar:'', fCow:'', showSold:false, lastSync:0 };
+const S = { animals:new Map(), exposures:new Map(), collars:new Map(), treatments:new Map(), expenses:new Map(), preg:new Map(), settings:new Map(), mYear:'', mGroup:'', cFilter:'all', history:[], loaded:true, tab:'herd', group:'', sel:null, fGroup:'', fSide:'collar', fCollar:'', fCow:'', showSold:false, lastSync:0 };
 
 // ---------- local storage ----------
 const LS = {
@@ -65,7 +65,7 @@ if(linkCode && linkCode!==cfg.code){
 }
 LS.set(K.cfg, cfg);
 const mirror = {};
-const COLS = ['animals','exposures','collars','treatments','expenses','preg'];
+const COLS = ['animals','exposures','collars','treatments','expenses','preg','settings'];
 let outbox = [], conflicts = [];
 function loadRanchData(){
   Object.keys(mirror).forEach(k=>delete mirror[k]); Object.assign(mirror, LS.get(K.mirror, {}));
@@ -236,11 +236,16 @@ function toast(msg, undo){
   toast.t=setTimeout(()=>t.hidden=true, undo?7000:2800);
 }
 const isSold = a => !!(a.sold===true || a.saleDate || (a.salePrice!==''&&a.salePrice!=null));
+// Died: off the ranch like a sale (collar free again). Missing: still counted on hand, flagged so someone looks for it.
+const isDead = a => !!a.died;
+const isGone = a => isSold(a) || isDead(a);
+const isMissing = a => !isGone(a) && !!a.missing;
+const gonePill = a => isSold(a) ? '<span class="pill sold">Sold</span>' : isDead(a) ? '<span class="pill sold">Died</span>' : isMissing(a) ? '<span class="pill warn">Missing</span>' : '';
 // Prices are shown on full-access phones (and on a phone that hasn't joined a ranch). Crew phones never receive them.
 const fin = () => !cfg.code || cfg.role==='full';
 const FIN = ['purchasePrice','purchaseDate','salePrice','saleDate'];
 const animals = () => [...S.animals.values()];
-const onHand = () => animals().filter(a=>!isSold(a));
+const onHand = () => animals().filter(a=>!isGone(a));
 const females = () => onHand().filter(a=>a.kind!=='bull');
 const bulls = () => onHand().filter(a=>a.kind==='bull').sort(byTag);
 const groups = () => [...new Set(onHand().map(a=>a.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
@@ -287,25 +292,25 @@ function renderHerd(){
   $('#groupChips').innerHTML = [['','All',pool.length], ...g.map(x=>[x,x,pool.filter(a=>a.group===x).length]), ...(showNone?[['__none','No group',none]]:[])]
     .map(([v,l,n])=>`<button type="button" class="chip" data-g="${esc(v)}" aria-pressed="${S.group===v}">${esc(l)} · ${n}</button>`).join('');
   const inGroup = pool.filter(a=>!S.group || (S.group==='__none' ? !a.group : a.group===S.group));
-  const live = inGroup.filter(a=>!isSold(a)), sold = inGroup.filter(isSold);
+  const live = inGroup.filter(a=>!isGone(a)), sold = inGroup.filter(isSold), dead = inGroup.filter(isDead), lost = live.filter(isMissing);
   const fem = live.filter(a=>a.kind!=='bull'), withCollar = live.filter(a=>a.collar);
   const sum = (xs,k) => xs.reduce((t,a)=>t+(Number(a[k])||0),0);
   const bought = fin() ? sum(inGroup,'purchasePrice') : 0, soldFor = fin() ? sum(sold,'salePrice') : 0;
-  $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>${live.length-fem.length===1?'bull':'bulls'}</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
+  $('#stats').innerHTML = animals().length ? `<span><b>${live.length}</b>on hand</span><span><b>${fem.length}</b>cows &amp; heifers</span><span><b>${live.length-fem.length}</b>${live.length-fem.length===1?'bull':'bulls'}</span><span><b>${withCollar.filter(a=>a.collarOn).length}/${withCollar.length}</b>collars fitted</span>${lost.length?`<span><b class="warn-text">${lost.length}</b>missing</span>`:''}${S.showSold?`<span><b>${sold.length}</b>sold</span>`:''}${S.showSold&&dead.length?`<span><b>${dead.length}</b>died</span>`:''}${bought?`<span><b class="money">${money(bought)}</b>paid</span>`:''}${S.showSold&&soldFor?`<span><b class="money">${money(soldFor)}</b>sold for</span>`:''}` : '';
   const q = $('#q').value.trim();
   const rows = inGroup.filter(a=>matches(a,q)).sort(byTag);
   const el = $('#herdList');
   if(!animals().length){ el.innerHTML = `<div class="empty"><strong>No cattle recorded yet</strong>Tap “Add animal” to enter the first cow, or import a spreadsheet from Settings.${!(syncUrl()&&cfg.code)?' If the herd is already in the Google Sheet, connect this phone in Settings › Ranch & phone setup.':''}</div>`; return; }
   renderSel();
-  if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group==='__none'?'No group':S.group)}`:''}${S.showSold?'':'. Sold animals are hidden'}.</div>`; return; }
+  if(!rows.length){ S.shown=[]; el.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches “${esc(q)}”${S.group?` in ${esc(S.group==='__none'?'No group':S.group)}`:''}${S.showSold?'':'. Sold and dead animals are hidden'}.</div>`; return; }
   S.shown = rows.map(a=>a.id);
   el.innerHTML = `<div class="list">${rows.map(a=>`
-    <button type="button" class="row${isSold(a)?' sold':''}${S.sel?' selmode':''}" data-id="${esc(a.id)}" ${S.sel?`aria-pressed="${S.sel.ids.has(a.id)}"`:''}>
+    <button type="button" class="row${isGone(a)?' sold':''}${S.sel?' selmode':''}" data-id="${esc(a.id)}" ${S.sel?`aria-pressed="${S.sel.ids.has(a.id)}"`:''}>
       ${S.sel?'<span class="tick" aria-hidden="true"></span>':''}${idBox(a)}
       <span class="main">
         <span class="line1">${brandsHtml(a) || '<span class="muted">No brand</span>'}${fittedIcon(a)}
           ${a.kind==='bull'?'<span class="pill bull">Bull</span>':a.kind==='heifer'?'<span class="pill">Heifer</span>':''}
-          ${isSold(a)?'<span class="pill sold">Sold</span>':''}${!isSold(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
+          ${gonePill(a)}${!isGone(a)&&withdrawalUntil(a.id)?'<span class="pill warn">Withdrawal</span>':''}</span>
         ${a.notes?`<span class="line2">${esc(a.notes)}</span>`:''}
       </span>
       <span class="rgroup">${esc(a.group||'')}</span>
@@ -357,10 +362,51 @@ function renderSel(){
   $('#selMove').textContent = S.sel.target!=null ? `Move to ${gName(S.sel.target)}` : 'Move to group';
   $('#selMove').disabled = !n;
   $('#selTreat').disabled = !n; $('#selTreat').hidden = S.sel.target!=null;
+  $('#selSell').disabled = !n; $('#selSell').hidden = S.sel.target!=null || !fin();
 }
 $('#selBtn').addEventListener('click', ()=>enterSelect(null));
 $('#selTreat').addEventListener('click', ()=>{ if(!S.sel || !S.sel.ids.size) return; const ids=[...S.sel.ids]; leaveSelect(); openTreatment(null, ids); });
 $('#selDone').addEventListener('click', leaveSelect);
+$('#selSell').addEventListener('click', ()=>{ if(!S.sel || !S.sel.ids.size || !fin()) return; openSellMany([...S.sel.ids]); });
+// Sell several at once (full access only): one sale date and price for all, per head or a total split evenly.
+function openSellMany(ids){
+  const xs=ids.map(id=>S.animals.get(id)).filter(a=>a && !isGone(a)), n=xs.length;
+  if(!n){ toast('Those animals are already sold or gone'); return; }
+  let mode='each';
+  openSheet(`<div class="sheet-h"><h2>Mark ${plural(n,'animal')} sold</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <form id="sm" class="card" autocomplete="off">
+      <label class="f">Sale date<input id="sm-date" type="date" value="${today()}"></label>
+      <div class="seg" id="sm-mode"><button type="button" data-m="each" aria-pressed="true">Price per head</button><button type="button" data-m="total" aria-pressed="false">Total for all</button></div>
+      <label class="f"><span id="sm-lab">Price per head ($)</span><input id="sm-amt" type="text" inputmode="decimal" placeholder="e.g. 3200"></label>
+      <label class="f">Buyer (optional)<input id="sm-buyer" type="text" placeholder="e.g. auction mart or buyer’s name"></label>
+      <div id="sm-sum" class="small"></div>
+      <div id="sm-warn"></div>
+      <button class="btn primary fitgo" type="submit">Mark ${plural(n,'animal')} sold</button>
+      <div class="small muted">Animals priced one by one? Leave this and enter each price on the animal instead.</div>
+    </form>`);
+  const each=()=>{ const v=parseMoney($('#sm-amt').value); if(typeof v!=='number') return null; return mode==='each' ? v : Math.round(v/n*100)/100; };
+  const upd=()=>{ const e=each(), d=$('#sm-date').value||today();
+    $('#sm-lab').textContent = mode==='each' ? 'Price per head ($)' : `Total for all ${n} ($)`;
+    $('#sm-sum').innerHTML = e==null ? '' : `<b>${n} head at ${money(e)} each = ${money(e*n)}</b>`;
+    const wd=xs.filter(a=>{ const w=withdrawalUntil(a.id); return w && d<=w; });
+    $('#sm-warn').innerHTML = wd.length ? `<div class="notice warn">On withdrawal on that date: ${wd.map(a=>esc(label(a))).join(', ')}.</div>` : ''; };
+  $('#sm-mode').addEventListener('click', e=>{ const b=e.target.closest('[data-m]'); if(!b) return; mode=b.dataset.m; $('#sm-mode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); upd(); });
+  $('#sm-amt').addEventListener('input', upd); $('#sm-date').addEventListener('change', upd); upd();
+  $('#sm').addEventListener('submit', e=>{
+    e.preventDefault(); const p=each();
+    if(p==null){ $('#sm-warn').innerHTML='<div class="notice warn">Enter the price, like 3200 or 3200.50.</div>'; return; }
+    const date=$('#sm-date').value||today(), buyer=$('#sm-buyer').value.trim(), now=Date.now();
+    const prev=xs.map(a=>[a.id, {salePrice:a.salePrice??'', saleDate:a.saleDate||'', buyer:a.buyer||''}]);
+    bulk(()=>{
+      xs.forEach(a=>patch('animals/'+a.id, {salePrice:p, saleDate:date, buyer, updatedAt:now, updatedBy:me()}));
+      logChange('sale','animal', `${plural(n,'animal')} sold${buyer?' to '+buyer:''}`, 'sold',
+        [{f:'Animals', from:'', to:xs.map(a=>label(a)).join(', ')}, {f:'saleDate', from:'', to:date}, {f:'salePrice', from:'', to:p}]);
+    });
+    closeSheet(); leaveSelect();
+    toast(`${plural(n,'animal')} marked sold`, ()=>{ const t=Date.now(); bulk(()=>{ prev.forEach(([id,v])=>{ if(S.animals.get(id)) patch('animals/'+id, {...v, updatedAt:t, updatedBy:me()}); });
+      logChange('sale','animal', `Undone: ${plural(n,'animal')} back on hand`, 'undone', []); }); toast('Undone'); });
+  });
+}
 $('#selAll').addEventListener('click', ()=>{ (S.shown||[]).forEach(id=>S.sel.ids.add(id)); renderHerd(); });
 $('#selClear').addEventListener('click', ()=>{ S.sel.ids.clear(); $('#selRangeMsg').innerHTML=''; renderHerd(); });
 // Tick animals by collar number, ranges included (same parsing as Add collars).
@@ -646,7 +692,7 @@ function openAddCollars(){
 function openCollar(id){
   const c=S.collars.get(id); if(!c){ closeSheet(); return; }
   const w=wearers(), on=w.get(ckey(c.number))||[], a=on[0], s=collarState(c,w);
-  const past=animals().filter(x=>isSold(x)&&ckey(x.collar)===ckey(c.number));
+  const past=animals().filter(x=>isGone(x)&&ckey(x.collar)===ckey(c.number));
   const hist=S.history.filter(h=>h.targetId===id || (h.changes||[]).some(ch=>ch.f==='collar'&&(ckey(ch.from)===ckey(c.number)||ckey(ch.to)===ckey(c.number))));
   const who = x => `${esc(label(x))} ${brandsHtml(x)} <span class="muted small">${esc(x.group||'')}</span>`;
   openSheet(`<div id="cs" style="display:flex;flex-direction:column;gap:14px">
@@ -857,6 +903,10 @@ function openShare(intro){
   draw();
 }
 
+// Text size: kept on this phone only.
+function renderTextSize(){ const t=cfg.textSize||''; document.documentElement.dataset.text=t; document.querySelectorAll('#textSize [data-t]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.t===t)); }
+$('#textSize').addEventListener('click', e=>{ const b=e.target.closest('[data-t]'); if(!b) return; cfg.textSize=b.dataset.t; LS.set(K.cfg,cfg); renderTextSize(); });
+renderTextSize();
 function renderSetup(){
   const st=$('#cfg-status'); if(!st) return;
   const nameEl=$('#cfg-name'), urlEl=$('#cfg-url');
@@ -976,10 +1026,11 @@ function openAnimal(id){
   const xs = id ? (a.kind==='bull'?expsForBull(id):expsForCow(id)) : [];
   const mv = k => a[k]===''||a[k]==null ? '' : Number(a[k]).toFixed(2).replace(/\.00$/,'');
   openSheet(`
-    <div class="sheet-h"><h2>${id?esc(label(a)):'New animal'}${id&&isSold(a)?' <span class="pill sold">Sold</span>':''}</h2><button class="x" type="button" aria-label="Close">×</button></div>
-    ${id&&!isSold(a)?`<div class="bar"><button type="button" class="btn tag" data-goto="fit">${CAM} Fit collar</button></div>`:''}
+    <div class="sheet-h"><h2>${id?esc(label(a)):'New animal'}${id?' '+gonePill(a):''}</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    ${id&&!isGone(a)?`<div class="bar"><button type="button" class="btn tag" data-goto="fit">${CAM} Fit collar</button></div>`:''}
     <form id="af" class="card" autocomplete="off">
       <div class="grid2">
+        <label class="f">Ear tag (VID)<input id="a-vid" type="text" value="${esc(a.vid||'')}" style="font-size:20px;font-weight:700"></label>
         <label class="f">Type<select id="a-kind">${Object.entries(KIND).map(([k,v])=>`<option value="${k}" ${a.kind===k?'selected':''}>${v}</option>`).join('')}</select></label>
         <div class="f" style="grid-column:1/-1"><label for="a-collar">Collar #</label><div class="inrow"><input id="a-collar" type="text" inputmode="numeric" list="collarlist" value="${esc(a.collar||'')}">${camButton('a-cphoto')}</div><datalist id="collarlist">${freeCollars().map(c=>`<option value="${esc(c.number)}">`).join('')}</datalist><div id="a-scan"></div></div>
         <div class="f">${(()=>{ const gs=[...new Set(groups().concat(a.group?[a.group]:[]))].sort((x,y)=>x.localeCompare(y,undefined,{numeric:true}));
@@ -990,17 +1041,21 @@ function openAnimal(id){
         <label class="f">Second brand (optional)<input id="a-b2" type="text" value="${esc(a.brand2||'')}"></label>
       </div>
       <div class="grid2">
-        <label class="f">Visual tag (VID)<input id="a-vid" type="text" value="${esc(a.vid||'')}"></label>
         <label class="f">EID / RFID tag<input id="a-eid" type="text" inputmode="numeric" value="${esc(a.eid||'')}"></label>
         <label class="f">Breed<input id="a-breed" type="text" list="breedlist" value="${esc(a.breed||'')}"><datalist id="breedlist">${[...new Set(animals().map(x=>x.breed).filter(Boolean))].map(b=>`<option value="${esc(b)}">`).join('')}</datalist></label>
         <label class="f">Date of birth<input id="a-dob" type="date" value="${esc(a.birthDate||'')}"></label>
       </div>
       <label class="f">Notes<textarea id="a-notes">${esc(a.notes||'')}</textarea></label>
+      ${id&&!isSold(a)?`<div class="grid2">
+        <label class="f">Status<select id="a-status"><option value="">On hand</option><option value="missing" ${!a.died&&a.missing?'selected':''}>Missing</option><option value="died" ${a.died?'selected':''}>Died</option></select></label>
+        <label class="f" id="a-sdbox" ${a.died||a.missing?'':'hidden'}><span id="a-sdl">${a.died?'Date found dead':'Missing since'}</span><input id="a-sdate" type="date" value="${esc(a.died||a.missing||'')}"></label>
+      </div>`:''}
       ${fin()?`      <div class="grid2">
         <label class="f">Purchase price ($)<input id="a-pp" type="text" inputmode="decimal" value="${esc(mv('purchasePrice'))}"></label>
         <label class="f">Purchase date<input id="a-pd" type="date" value="${esc(a.purchaseDate||'')}"></label>
         <label class="f">Sale price ($)<input id="a-sp" type="text" inputmode="decimal" value="${esc(mv('salePrice'))}"></label>
         <label class="f">Sale date<input id="a-sd" type="date" value="${esc(a.saleDate||'')}"></label>
+        <label class="f">Buyer<input id="a-buyer" type="text" value="${esc(a.buyer||'')}"></label>
       </div>
       <div class="small muted" id="a-margin"></div>`:''}
       <div id="a-warn"></div>
@@ -1023,6 +1078,8 @@ function openAnimal(id){
   if(fin()){ $('#a-pp').addEventListener('input',margin); $('#a-sp').addEventListener('input',margin); margin();
     $('#a-sd').addEventListener('change', ()=>{ const w=id&&withdrawalUntil(id); if(w && $('#a-sd').value && $('#a-sd').value<=w) $('#a-warn').innerHTML=`<div class="notice warn">This animal is on withdrawal until ${esc(fmtDate(w))}.</div>`; }); }
   $('#sheet').querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.goto==='breed') openBreedCow(id); else if(b.dataset.goto==='fit'){ closeSheet(); S.fCow=id; S.fCollar=''; S.fNoAuto=false; const a=S.animals.get(id); if(a && a.collar && fitFree(a.collar, a.id) && !orderOn()) S.fCollar=a.collar; if(location.hash==='#fit') renderFit(); else location.hash='#fit'; } else openTreatment(null,[id]); }));
+  const st=$('#a-status');
+  st && st.addEventListener('change', ()=>{ const v=st.value; $('#a-sdbox').hidden=!v; $('#a-sdl').textContent = v==='died'?'Date found dead':'Missing since'; if(v && !$('#a-sdate').value) $('#a-sdate').value=today(); });
   $('#a-group').addEventListener('change', e=>{ const nw=e.target.value==='__new'; $('#a-gnew').hidden=!nw; if(nw) $('#a-gnew').focus(); });
   const collarInput=$('#a-collar');
   const checkDup=()=>{ const v=collarInput.value.trim(); const d=v && onHand().find(o=>o.id!==id && ckey(o.collar)===ckey(v)); const c=v && collarFor(v);
@@ -1051,8 +1108,10 @@ function openAnimal(id){
     const v={ kind:$('#a-kind').value, collar:collarInput.value.trim(), group:($('#a-group').value==='__new' ? canonGroup($('#a-gnew').value) : $('#a-group').value), brand1:$('#a-b1').value.trim(), brand2:$('#a-b2').value.trim(), collarOn:$('#a-on').checked, notes:$('#a-notes').value.trim(),
       vid:$('#a-vid').value.trim(), eid:$('#a-eid').value.trim(), breed:$('#a-breed').value.trim(), birthDate:$('#a-dob').value,
       purchasePrice:pp, purchaseDate:fin()?$('#a-pd').value:'', salePrice:sp, saleDate:fin()?$('#a-sd').value:'' };
+    if(fin()) v.buyer=$('#a-buyer').value.trim();
     if(!fin()) FIN.forEach(k=>delete v[k]);
-    if(!v.collar && !v.brand1){ $('#a-warn').innerHTML='<div class="notice warn">Enter a collar number or a brand so you can find this animal later.</div>'; return; }
+    if(st){ const sd=$('#a-sdate').value||today(); v.died = st.value==='died' ? sd : ''; v.missing = st.value==='missing' ? sd : ''; }
+    if(!v.collar && !v.brand1 && !v.vid){ $('#a-warn').innerHTML='<div class="notice warn">Enter an ear tag, collar number or brand so you can find this animal later.</div>'; return; }
     const now=Date.now();
     if(!id){
       const nid=rid();
@@ -1066,7 +1125,8 @@ function openAnimal(id){
       const upd={updatedAt:now, updatedBy:me()}; changes.forEach(c=>upd[c.f]=v[c.f]);
       patch('animals/'+id, upd);
       logChange(id,'animal',label(v),'edited',changes);
-      closeSheet(); toast('Saved');
+      closeSheet();
+      toast(v.died && !a.died ? `${label(v)} marked as died${v.collar?`. Collar ${v.collar} is free again`:''}` : v.missing && !a.missing ? `${label(v)} marked missing` : !v.missing && a.missing && !v.died ? `${label(v)} found` : 'Saved');
     }
   });
 }
@@ -1194,7 +1254,7 @@ function boostersDue(){
   // latest record per animal+product with a booster date; due if within 30 days or overdue
   const seen=new Set(), out=[];
   treatments().forEach(t=>{ (t.animalIds||[]).forEach(aid=>{ const k=aid+'|'+String(t.product).toLowerCase(); if(seen.has(k)) return; seen.add(k);
-    const a=S.animals.get(aid); if(!a || isSold(a) || !t.boosterDue) return;
+    const a=S.animals.get(aid); if(!a || isGone(a) || !t.boosterDue) return;
     const d=daysBetween(today(), t.boosterDue); if(d<=30) out.push({a, t, d}); }); });
   return out.sort((x,y)=>x.d-y.d);
 }
@@ -1289,7 +1349,9 @@ $('#hq').addEventListener('input', renderHealth);
 $('#healthList').addEventListener('click', e=>{ const r=e.target.closest('[data-treat]'); if(r) openTreatment(r.dataset.treat); });
 
 // ---------- breeding: pregnancy & calving ----------
-const gestation = () => Number(cfg.gestation)||283;
+// Ranch-wide settings live in the sheet's Settings tab so every phone agrees; this phone's own copy is the fallback.
+const setting = k => { const r=S.settings && S.settings.get(k); return r && r.value!=='' && r.value!=null ? r.value : undefined; };
+const gestation = () => Number(setting('gestation')) || Number(cfg.gestation) || 283;
 const pregRecs = id => [...S.preg.values()].filter(p=>p.cowId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 function breedingFor(cow){
   const ex = expsForCow(cow.id)[0];
@@ -1339,7 +1401,7 @@ function openBreedCow(id){
       ${b.from&&b.status!=='calved'&&b.status!=='open'?`<div style="font-size:20px;font-weight:700">Due ${esc(fmtDate(b.from))} – ${esc(fmtDate(b.to))}</div><div class="small muted">${esc(b.basis)} · ${G}-day gestation</div>`:''}
       ${b.ex?`<div class="small">Exposed ${esc(fmtDate(b.ex.start))} – ${b.ex.end?esc(fmtDate(b.ex.end)):'still in'} · ${esc(b.ex.bullId?label(S.animals.get(b.ex.bullId)):'AI / no bull')}</div>`:''}
       ${b.check?`<div class="small">Preg check ${esc(fmtDate(b.check.date))}: <b>${esc(b.check.result)}</b>${b.check.daysPregnant!==''&&b.check.daysPregnant!=null?` · ${esc(b.check.daysPregnant)} days along`:''}</div>`:''}
-      ${b.calving?`<div class="small">Calved ${esc(fmtDate(b.calving.date))}${b.calving.calfSex?' · '+esc(b.calving.calfSex):''}${b.calving.notes?' · '+esc(b.calving.notes):''}</div>`:''}
+      ${b.calving?`<div class="small">Calved ${esc(fmtDate(b.calving.date))}${b.calving.calfSex?' · '+esc(b.calving.calfSex):''}${b.calving.calfSize?' · '+esc(b.calving.calfSize):''}${b.calving.notes?' · '+esc(b.calving.notes):''}</div>`:''}
       <div class="bar"><button type="button" class="btn" data-act="check">Record preg check</button><button type="button" class="btn tag" data-act="calving">Record calving</button></div>
       <div class="bar"><button type="button" class="btn" data-act="expose">Record breeding</button><button type="button" class="btn" data-act="open">Cow details</button></div>
     </div>
@@ -1361,7 +1423,8 @@ function openPreg(cowId, type){
         <label class="f">Days pregnant (optional, from the vet)<input id="pg-days" type="text" inputmode="numeric" placeholder="Makes the due date more exact"></label>
         <div class="small muted" id="pg-due"></div>`
       : `<div class="grid2"><label class="f">Calf<select id="pg-sex"><option value="">—</option><option>Heifer calf</option><option>Bull calf</option><option>Twins</option><option>Stillborn</option></select></label>
-          <label class="f">Calf collar or tag (optional)<input id="pg-calftag" type="text"></label></div>
+          <label class="f">Calf size<select id="pg-size"><option value="">—</option><option>Small</option><option>Medium</option><option>Big</option></select></label>
+          <label class="f">Calf ear tag (optional)<input id="pg-calftag" type="text"></label></div>
         <label class="check"><input id="pg-addcalf" type="checkbox" checked> Add the calf to the herd</label>`}
       <label class="f">Notes<input id="pg-notes" type="text"></label>
       <button class="btn primary" type="submit">Save</button>
@@ -1379,14 +1442,14 @@ function openPreg(cowId, type){
       put('preg/'+pid, {cowId, type:'check', date, result:res, daysPregnant: dp===''||isNaN(Number(dp))?'':Number(dp), notes, updatedAt:now, updatedBy:me()});
       logChange(cowId,'animal',label(a),'preg checked',[{f:'Result',to:res+(dp?` (${dp} days)`:'')}]);
     } else {
-      const sex=$('#pg-sex').value; let calfId='';
+      const sex=$('#pg-sex').value, size=$('#pg-size').value; let calfId='';
       if($('#pg-addcalf').checked && sex!=='Stillborn'){
-        calfId=rid(); const calf={kind:'calf', collar:$('#pg-calftag').value.trim(), group:a.group||'', brand1:'', brand2:'', collarOn:false,
-          notes:`${sex||'Calf'} of ${label(a)}`, birthDate:date, damId:cowId, createdAt:now, updatedAt:now, updatedBy:me()};
+        calfId=rid(); const calf={kind:'calf', vid:$('#pg-calftag').value.trim(), collar:'', group:a.group||'', brand1:'', brand2:'', collarOn:false,
+          notes:`${size?size+' ':''}${(sex||'Calf').replace(/^(\w)/,c=>size?c.toLowerCase():c)} of ${label(a)}`, birthDate:date, damId:cowId, createdAt:now, updatedAt:now, updatedBy:me()};
         put('animals/'+calfId, calf); logChange(calfId,'animal',label(calf),'born',[{f:'Dam',to:label(a)}]);
       }
-      put('preg/'+pid, {cowId, type:'calving', date, calfSex:sex, calfId, notes, updatedAt:now, updatedBy:me()});
-      logChange(cowId,'animal',label(a),'calved',[{f:'Calf',to:sex||'recorded'}]);
+      put('preg/'+pid, {cowId, type:'calving', date, calfSex:sex, calfSize:size, calfId, notes, updatedAt:now, updatedBy:me()});
+      logChange(cowId,'animal',label(a),'calved',[{f:'Calf',to:[size,sex].filter(Boolean).join(' ')||'recorded'}]);
     }
     closeSheet(); toast('Saved'); openBreedCow(cowId);
   });
@@ -1396,11 +1459,13 @@ $('#gestBtn').addEventListener('click', ()=>{
   openSheet(`<div class="sheet-h"><h2>Gestation length</h2><button class="x" type="button" aria-label="Close">×</button></div>
     <form id="gf" class="card"><label class="f">Days from breeding to calving<input id="g-days" type="text" inputmode="numeric" value="${gestation()}"></label>
     <div class="small muted">Beef cattle average about 283 days. Some breeds run a few days shorter or longer.</div><button class="btn primary" type="submit">Save</button></form>`);
-  $('#gf').addEventListener('submit', e=>{ e.preventDefault(); const d=Number($('#g-days').value); if(d>=250&&d<=310){ cfg.gestation=d; LS.set(K.cfg,cfg); closeSheet(); renderAll(); toast('Saved'); } else toast('Enter a number between 250 and 310'); });
+  $('#gf').addEventListener('submit', e=>{ e.preventDefault(); const d=Number($('#g-days').value); if(d>=250&&d<=310){ const was=gestation(); cfg.gestation=d; LS.set(K.cfg,cfg); closeSheet();
+    if(d!==was){ put('settings/gestation', {value:d, updatedAt:Date.now(), updatedBy:me()}); logChange('gestation','setting','Gestation length','changed',[{f:'Days',from:was,to:d}]); } else renderAll();
+    toast('Saved for every phone on the ranch'); } else toast('Enter a number between 250 and 310'); });
 });
 
 // ---------- money (full access only) ----------
-const EXP_CATS = ['Feed','Vet & medicine','Fuel','Labour','Repairs','Freight & trucking','Pasture & lease','Fees & commissions','Equipment','Other'];
+const EXP_CATS = ['Extra feed','Salt & mineral','Pasture lease / rent','Bull rental','Interest','Vaccines & vet','Trucking','Fees & commissions','Labour','Fuel','Repairs','Equipment','Other'];
 function renderMoney(){
   if(!fin()){ $('#moneyBody').innerHTML='<div class="empty"><strong>Not available on this phone</strong>Money is only shown on phones with full access.</div>'; return; }
   const years=[...new Set([...animals().flatMap(a=>[yearOf(a.purchaseDate),yearOf(a.saleDate)]), ...[...S.expenses.values()].map(x=>yearOf(x.date)), ...[...S.treatments.values()].map(t=>yearOf(t.date))].filter(Boolean))].sort().reverse();
@@ -1421,7 +1486,8 @@ function renderMoney(){
   const costs = purchases + expTotal + tCost, net = sales - costs;
   const soldWithCost = sold.filter(a=>has(a.purchasePrice));
   const sp = soldWithCost.reduce((t,a)=>t+num(a.salePrice),0), cp = soldWithCost.reduce((t,a)=>t+num(a.purchasePrice),0);
-  const onHandCost = pool.filter(a=>!isSold(a) && has(a.purchasePrice)).reduce((t,a)=>t+num(a.purchasePrice),0);
+  const onHandCost = pool.filter(a=>!isGone(a) && has(a.purchasePrice)).reduce((t,a)=>t+num(a.purchasePrice),0);
+  const died = pool.filter(a=>isDead(a) && inY(a.died)), diedCost = died.filter(a=>has(a.purchasePrice)).reduce((t,a)=>t+num(a.purchasePrice),0);
   const tile = (k, v, sub, cls) => `<div class="mtile ${cls||''}"><div class="small muted">${k}</div><div class="mv">${v}</div>${sub?`<div class="small muted">${sub}</div>`:''}</div>`;
   $('#moneyBody').innerHTML = `
     <div class="mtiles">
@@ -1437,7 +1503,8 @@ function renderMoney(){
         return `<tr data-id="${esc(a.id)}"><td>${esc(label(a))}${a.brand1?' · '+esc(a.brand1):''}</td><td>${esc(shortDate(a.saleDate))}</td><td class="r">${has(a.purchasePrice)?money(a.purchasePrice):'—'}</td><td class="r">${money(a.salePrice)}</td><td class="r ${p==null?'':p>=0?'good-text':'warn-text'}">${p==null?'—':money(p)}</td><td class="r">${p==null?'—':fmtPct(pct(p,num(a.purchasePrice)))}</td></tr>`; }).join('')}
       </tbody></table></div>`:'<div class="small muted">No sales in this period.</div>'}
     </div>
-    <div class="card"><b>On hand</b><div class="small muted">${pool.filter(a=>!isSold(a)).length} head on hand · ${money(onHandCost)} paid for those with a purchase price.</div></div>
+    <div class="card"><b>On hand</b><div class="small muted">${pool.filter(a=>!isGone(a)).length} head on hand · ${money(onHandCost)} paid for those with a purchase price.</div>${died.length?`<div class="small muted">${plural(died.length,'animal')} died${diedCost?` · ${money(diedCost)} paid for ${died.length===1?'it':'them'}`:''}.</div>`:''}</div>
+    <div class="card"><b>Sell now or carry over the winter?</b><div class="small muted">Compare selling this fall with feeding them through to spring, using your own prices and costs.</div><div><button type="button" class="btn primary" id="carryBtn">Work it out</button></div></div>
     <div class="card"><div class="bar" style="justify-content:space-between"><b>Expenses</b><button type="button" class="btn primary" id="expAdd">+ Add expense</button></div>
       ${exps.length?`<div class="tablewrap"><table class="mtable"><thead><tr><th>Date</th><th>What</th><th class="r">Amount</th></tr></thead><tbody>${exps.map(x=>`<tr data-exp="${esc(x.id)}"><td>${esc(shortDate(x.date))}</td><td>${esc(x.category||'')}${x.description?' · '+esc(x.description):''}${x.group?` <span class="muted">(${esc(x.group)})</span>`:''}</td><td class="r">${money(x.amount)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="small muted">No expenses in this period.</div>'}
     </div>`;
@@ -1446,9 +1513,59 @@ $('#mYear').addEventListener('change', e=>{ S.mYear=e.target.value; renderMoney(
 $('#mGroup').addEventListener('change', e=>{ S.mGroup=e.target.value; renderMoney(); });
 $('#moneyBody').addEventListener('click', e=>{
   if(e.target.closest('#expAdd')) return openExpense(null);
+  if(e.target.closest('#carryBtn')) return openCarry();
   const x=e.target.closest('[data-exp]'); if(x) return openExpense(x.dataset.exp);
   const r=e.target.closest('tr[data-id]'); if(r) openAnimal(r.dataset.id);
 });
+// Sell now or carry over: everything is typed in, nothing is saved to the sheet (the last numbers are kept on this phone).
+function openCarry(){
+  if(!fin()) return;
+  const gv=S.mGroup||'';
+  const head0 = onHand().filter(a=>a.kind!=='bull' && (!gv || a.group===gv)).length;
+  const c = {head:head0||'', fall:'', spring:'', months:6, feed:'', other:'', rate:'', death:1, ...(cfg.carry||{})};
+  if(head0) c.head=head0;
+  const f = (k, lab, hint, mode) => `<label class="f">${lab}<input data-k="${k}" type="text" inputmode="${mode||'decimal'}" value="${esc(c[k]??'')}" ${hint?`placeholder="${esc(hint)}"`:''}></label>`;
+  openSheet(`<div class="sheet-h"><h2>Sell now or carry over?</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="card" id="cy">
+      <div class="grid2">
+        ${f('head', `How many head${gv?` (${esc(gv)})`:''}`, '', 'numeric')}
+        ${f('months', 'Months to carry them', 'e.g. 6', 'numeric')}
+        ${f('fall', 'Price per head if sold now ($)', 'e.g. 3200')}
+        ${f('spring', 'Expected price per head in spring ($)', 'e.g. 3600')}
+        ${f('feed', 'Feed & care per head per month ($)', 'hay, salt & mineral, pasture')}
+        ${f('other', 'Other winter costs per head ($)', 'vet, trucking, bull rental')}
+        ${f('rate', 'Interest rate (% a year)', 'e.g. 7')}
+        ${f('death', 'Expected death loss (%)', 'e.g. 1')}
+      </div>
+      <div class="small muted">For the spring price, look at last spring’s sale reports from your auction mart and what buyers are saying now. If they’ll calve before you sell, count the calves in the spring price.</div>
+    </div>
+    <div id="cy-out"></div>`);
+  const out=$('#cy-out');
+  const calc=()=>{
+    $('#cy').querySelectorAll('[data-k]').forEach(i=>{ c[i.dataset.k]=i.value.trim(); });
+    cfg.carry={...c}; delete cfg.carry.head; LS.set(K.cfg,cfg);
+    const n = k => { const v=parseMoney(c[k]); return typeof v==='number' ? v : 0; };
+    const head=Math.max(0,Math.round(n('head'))), fall=n('fall'), spring=n('spring'), months=n('months');
+    if(!head || !fall || !spring){ out.innerHTML='<div class="small muted">Fill in how many head and both prices to see the answer.</div>'; return; }
+    const feed=n('feed')*months, other=n('other'), interest=fall*n('rate')/100*months/12, loss=Math.min(100,n('death'))/100;
+    const carryCost=feed+other+interest, springNet=spring*(1-loss), perHead=springNet-carryCost-fall, total=perHead*head;
+    const breakEven = loss<1 ? (fall+carryCost)/(1-loss) : 0;
+    const ahead = perHead>=0;
+    out.innerHTML = `<div class="card">
+      <div class="notice ${ahead?'ok':'warn'}" style="font-size:18px">${ahead?'Carrying over':'Selling now'} comes out about ${money(Math.abs(total))} ahead (${money(Math.abs(perHead))} a head).</div>
+      <div class="tablewrap"><table class="mtable"><tbody>
+        <tr><td>Sell now</td><td class="r">${money(fall)} a head</td><td class="r"><b>${money(fall*head)}</b></td></tr>
+        <tr><td>Spring price, less ${Math.round(loss*1000)/10}% death loss</td><td class="r">${money(springNet)} a head</td><td class="r">${money(springNet*head)}</td></tr>
+        <tr><td>Feed &amp; care (${months} months)</td><td class="r">−${money(feed)}</td><td class="r">−${money(feed*head)}</td></tr>
+        <tr><td>Other winter costs</td><td class="r">−${money(other)}</td><td class="r">−${money(other*head)}</td></tr>
+        <tr><td>Interest on the money tied up</td><td class="r">−${money(interest)}</td><td class="r">−${money(interest*head)}</td></tr>
+        <tr><td><b>Carry over</b></td><td class="r">${money(springNet-carryCost)} a head</td><td class="r"><b>${money((springNet-carryCost)*head)}</b></td></tr>
+      </tbody></table></div>
+      ${breakEven?`<div>To break even, spring prices need to reach about <b>${money(Math.ceil(breakEven))}</b> a head.</div>`:''}
+      <div class="small muted">A guide only. Prices can move either way over winter.</div></div>`;
+  };
+  $('#cy').addEventListener('input', calc); calc();
+}
 function openExpense(id){
   if(!fin()) return;
   const x = id ? S.expenses.get(id) : {date:today(), group:S.mGroup||''};
@@ -1546,7 +1663,7 @@ function mapStep(sheets, names, sheetName){
   const plan = () => {
     const map={}; document.querySelectorAll('[data-map]').forEach(el=>{ const i=Number(el.value); if(i>=0) map[el.dataset.map]=i; });
     const by=$('#imp-match').value, order=$('#imp-order').value, incl=$('#imp-onlysold').checked;
-    const index={}; if(by!=='none') animals().forEach(a=>{ const v=String(a[by]||'').trim().toLowerCase(); if(v && (incl || !isSold(a))) index[v]=a; });
+    const index={}; if(by!=='none') animals().forEach(a=>{ const v=String(a[by]||'').trim().toLowerCase(); if(v && (incl || !isGone(a))) index[v]=a; });
     const out={add:[], upd:[], skip:0};
     body.forEach(r=>{
       const v={}; Object.entries(map).forEach(([k,i])=>{ let x=r[i]; if(x==null) return;
@@ -1580,10 +1697,11 @@ function mapStep(sheets, names, sheetName){
 const animalRow = (a, F) => Object.assign({
   'Type':KIND[a.kind]||'Cow', 'Collar':a.collar||'', 'Collar fitted':a.collarOn?'Yes':'No', 'Group':a.group||'', 'Brand':a.brand1||'', '2nd brand':a.brand2||'',
   'Visual tag (VID)':a.vid||'', 'EID / RFID':a.eid||'', 'Breed':a.breed||'', 'Date of birth':a.birthDate||'', 'Notes':a.notes||'' },
-  F ? {'Purchase price':a.purchasePrice??'', 'Purchase date':a.purchaseDate||'', 'Sale price':a.salePrice??'', 'Sale date':a.saleDate||''} : {'Sold':isSold(a)?'Yes':''},
+  F ? {'Purchase price':a.purchasePrice??'', 'Purchase date':a.purchaseDate||'', 'Sale price':a.salePrice??'', 'Sale date':a.saleDate||'', 'Buyer':a.buyer||''} : {'Sold':isSold(a)?'Yes':''},
+  {'Died':a.died||'', 'Missing since':isMissing(a)?a.missing:''},
   (()=>{ const b=breedingFor(a); return {'Breeding status':b?BSTATUS[b.status][0]:'', 'Calving window':b&&b.from&&b.status!=='calved'&&b.status!=='open'?`${b.from} to ${b.to}`:'', 'On withdrawal until':withdrawalUntil(a.id)}; })(),
   {'Last updated':a.updatedAt?new Date(a.updatedAt).toLocaleString():''});
-function exportPool(){ const w=$('#ex-which')?.value||'onhand'; return animals().filter(a=> w==='all' ? true : w==='onhand' ? !isSold(a) : (!isSold(a) && a.group===w)).sort(byCollar); }
+function exportPool(){ const w=$('#ex-which')?.value||'onhand'; return animals().filter(a=> w==='all' ? true : w==='onhand' ? !isGone(a) : (!isGone(a) && a.group===w)).sort(byCollar); }
 function toCSV(rows){ if(!rows.length) return ''; const h=Object.keys(rows[0]); return [h.map(csvCell).join(',')].concat(rows.map(r=>h.map(k=>csvCell(r[k])).join(','))).join('\n'); }
 // eShepherd's Bulk Create file: row 1 instructions, row 2 headers (Action, Animal ID, Neckband, EID*, VID*, Breed, Stock Class,
 // Date of Birth, Tattoo or Brand, Weight (lb), Weighed date, Expected Weight Gain (lb), Pregnancy Status, Note). Dates dd-MM-yyyy.
@@ -1762,7 +1880,8 @@ function camButton(id){ return `<label class="btn cambtn" for="${id}" title="Tak
 
 // ---------- fit collars: pick a collar and an animal (either order), then Fit ----------
 // Animals that need a collar on: on hand, no fitted collar. Calves only once they've been given a collar number.
-const needsCollar = a => !isSold(a) && (a.collar ? !a.collarOn : a.kind!=='calf');
+// Every animal wears a collar, calves included.
+const needsCollar = a => !isGone(a) && !a.collarOn;
 // A collar can be fitted when it isn't lost and isn't on another animal (known or not) right now.
 function fitFree(num, forId){ const c=collarFor(num); if(c && (c.status==='lost' || c.unknownAt)) return false; return !onHand().some(o=>o.id!==forId && o.collarOn && ckey(o.collar)===ckey(num)); }
 const cowName = a => [a.brand1, a.vid].filter(Boolean).join(' ') || label(a);
@@ -1786,7 +1905,7 @@ function renderFit(){
   document.querySelectorAll('#fitSwitch button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.side===S.fSide));
   const hh=document.querySelector('header'); if(hh) document.documentElement.style.setProperty('--headh', hh.offsetHeight+'px');
   // a picked cow or collar that is no longer available drops out
-  if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || isSold(a) || (!multi && !needsCollar(a))){ S.fCow=''; S.wp=null; } }
+  if(S.fCow && S.fCow!=='unknown'){ const a=S.animals.get(S.fCow); if(!a || isGone(a) || (!multi && !needsCollar(a))){ S.fCow=''; S.wp=null; } }
   if(S.fCow==='unknown' && !collarJob) S.fCow='';
   if(S.fCollar){ const c=collarFor(S.fCollar); if(c && c.status==='lost') S.fCollar=''; }
   const qRaw=$('#fq').value.trim(), q=ckey(qRaw);
@@ -1936,7 +2055,7 @@ function openFitUnknown(num){
   });
 }
 // Animals that could be the unknown one: on hand, not calves, no fitted collar, in the group if one was given.
-const likelyFor = c => onHand().filter(a=>a.kind!=='calf' && !a.collarOn && (!c.unknownGroup || a.group===c.unknownGroup)).sort(byTag);
+const likelyFor = c => onHand().filter(a=>!a.collarOn && (!c.unknownGroup || a.group===c.unknownGroup)).sort(byTag);
 // Work out which animal an unknown collar is on, one collar at a time, by elimination.
 function openUnknown(i){
   const list=unknownCollars(); if(!list.length){ closeSheet(); return; }

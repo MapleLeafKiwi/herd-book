@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Herd Book">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
+<script>try{var hbc=JSON.parse(localStorage.getItem('herdbook.app.config')||'{}');if(hbc.textSize)document.documentElement.dataset.text=hbc.textSize;}catch(e){}</script>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,6 +40,9 @@
   --primary:#9cb68f; --primary-ink:#16200f; --strap:#1d1f1e; --panel:#3b4952; --panel-line:#c9d3d8; --strap-edge:#6b716d; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+/* Text size (Settings): the whole page is scaled, so buttons and boxes grow with the words */
+:root[data-text="1"] :is(main,.sheet){zoom:1.15}
+:root[data-text="2"] :is(main,.sheet){zoom:1.3}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--head)}
 .wrap{max-width:780px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--head);color:var(--head-ink);border-bottom:1px solid var(--line)}
@@ -246,6 +250,15 @@ section[data-view="herd"].selecting{padding-bottom:110px}
 .selgo{min-height:56px;font-size:17px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #selDone{min-height:56px}
 body:has(#selBar:not([hidden])) .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+/* On a phone the select bar is two rows: count and Done, then the actions side by side */
+@media (max-width:620px){
+  .selbar-in{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .selcount{grid-column:1 / 3;align-self:center}
+  #selDone{order:1}
+  .selbar-in .selgo{order:2;max-width:none;white-space:normal;line-height:1.15;font-size:15px;padding:6px 8px}
+  section[data-view="herd"].selecting{padding-bottom:170px}
+  body:has(#selBar:not([hidden])) .toast{bottom:calc(160px + env(safe-area-inset-bottom,0px))}
+}
 .gpick{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:56px;padding:8px 14px;text-align:left;background:var(--surface);border:2px solid var(--line);border-radius:12px;font:inherit;color:inherit;cursor:pointer}
 .gpick[aria-pressed="true"]{border-color:var(--primary);background:var(--ok-soft)}
 .gpick .n{color:var(--muted);font-size:14px;white-space:nowrap}
@@ -332,7 +345,7 @@ section[data-view="work"][data-nocollar="1"] .fit-grid{grid-template-columns:1fr
   <div class="ro" id="setupBanner" hidden>This phone hasn’t joined a ranch yet, so records stay on this phone. Join or start one in <a href="#settings">Settings › Ranch &amp; phone setup</a>.</div>
 
   <section data-view="herd">
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Every animal on the ranch. Search by tag, brand, group or notes.</li><li>Tap a group button to see just that group. Tap an animal to see or change its details.</li><li><b>+ Add animal</b> for a new one. The orange collar symbol <svg class="help-icon" viewBox="0 0 24 30" width="20" height="25" aria-hidden="true"><rect x="8" y="0.8" width="8" height="11" rx="2" fill="var(--strap)" stroke="var(--strap-edge)" stroke-width="0.8"/><circle cx="12" cy="4.2" r="1.4" fill="var(--surface)"/><circle cx="12" cy="19.6" r="9.8" fill="var(--tag)"/><circle cx="12" cy="19.6" r="5.9" fill="var(--strap)"/><rect x="9" y="16.6" width="6" height="6" rx="0.7" fill="var(--panel)"/></svg> means its collar is on.</li><li>Sold animals are hidden. Tick <b>Show sold animals</b> to see them.</li><li><b>New group:</b> tap <b>Manage groups</b>, then <b>+ New group</b>. Type the name, tick the cattle and tap <b>Move</b>. The group is saved once cattle are in it.</li><li><b>Move cattle:</b> tap <b>Select</b>, tick the animals (or type collar numbers like 1-20, 35), then tap <b>Move to group</b>.</li><li><b>Manage groups</b> also adds cattle to a group, renames it, or empties it.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Every animal on the ranch. Search by tag, brand, group or notes.</li><li>Tap a group button to see just that group. Tap an animal to see or change its details.</li><li><b>+ Add animal</b> for a new one. The orange collar symbol <svg class="help-icon" viewBox="0 0 24 30" width="20" height="25" aria-hidden="true"><rect x="8" y="0.8" width="8" height="11" rx="2" fill="var(--strap)" stroke="var(--strap-edge)" stroke-width="0.8"/><circle cx="12" cy="4.2" r="1.4" fill="var(--surface)"/><circle cx="12" cy="19.6" r="9.8" fill="var(--tag)"/><circle cx="12" cy="19.6" r="5.9" fill="var(--strap)"/><rect x="9" y="16.6" width="6" height="6" rx="0.7" fill="var(--panel)"/></svg> means its collar is on.</li><li>Sold and dead animals are hidden. Tick <b>Show sold and dead</b> to see them.</li><li><b>Found one dead or missing?</b> Open it and set <b>Status</b> to <b>Died</b> or <b>Missing</b>. A dead animal’s collar is free again.</li><li><b>New group:</b> tap <b>Manage groups</b>, then <b>+ New group</b>. Type the name, tick the cattle and tap <b>Move</b>. The group is saved once cattle are in it.</li><li><b>Move cattle:</b> tap <b>Select</b>, tick the animals (or type collar numbers like 1-20, 35), then tap <b>Move to group</b>.</li><li><b>Manage groups</b> also adds cattle to a group, renames it, or empties it.</li></ul></details>
     <div class="bar">
       <input id="q" class="search" type="search" placeholder="Search tag, brand, notes, group" autocomplete="off">
       <button class="btn primary" id="addBtn" type="button">+ Add animal</button>
@@ -347,10 +360,10 @@ section[data-view="work"][data-nocollar="1"] .fit-grid{grid-template-columns:1fr
       <div id="selRangeMsg"></div>
     </div>
     <div class="fab-row"><button class="btn" type="button" data-open-import>Import</button><button class="btn" type="button" data-open-export>Export / eShepherd</button></div>
-    <label class="check small" style="min-height:0"><input id="showSold" type="checkbox" style="width:20px;height:20px"> Show sold animals</label>
+    <label class="check small" style="min-height:0"><input id="showSold" type="checkbox" style="width:20px;height:20px"> Show sold and dead</label>
     <div class="stats" id="stats"></div>
     <div id="herdList"></div>
-    <div class="selbar" id="selBar" hidden><div class="wrap selbar-in"><div class="selcount" id="selCount">0 selected</div><button type="button" class="btn primary selgo" id="selMove">Move to group</button><button type="button" class="btn selgo" id="selTreat">Record treatment</button><button type="button" class="btn" id="selDone">Done</button></div></div>
+    <div class="selbar" id="selBar" hidden><div class="wrap selbar-in"><div class="selcount" id="selCount">0 selected</div><button type="button" class="btn primary selgo" id="selMove">Move to group</button><button type="button" class="btn selgo" id="selTreat">Record treatment</button><button type="button" class="btn selgo" id="selSell" hidden>Mark sold</button><button type="button" class="btn" id="selDone">Done</button></div></div>
   </section>
 
   <section data-view="work" data-fside="collar" hidden>
@@ -420,14 +433,14 @@ section[data-view="work"][data-nocollar="1"] .fit-grid{grid-template-columns:1fr
   </section>
 
   <section data-view="money" hidden>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Profit, sales, purchases and expenses. Crew phones never see this page.</li><li>Pick a year or a group at the top to narrow it down.</li><li>Purchase and sale prices are entered on each animal (Herd › tap the animal).</li><li><b>+ Add expense</b> for feed, vet bills, fuel and so on.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Profit, sales, purchases and expenses. Crew phones never see this page.</li><li>Pick a year or a group at the top to narrow it down.</li><li>Purchase and sale prices are entered on each animal (Herd › tap the animal).</li><li><b>+ Add expense</b> for extra feed, salt &amp; mineral, bull rental, pasture rent, interest and so on.</li><li><b>Sold a bunch at one price?</b> On the Herd tab tap <b>Select</b>, tick them, then <b>Mark sold</b>. Enter the price per head or the total.</li><li><b>Sell now or carry over?</b> Type in this fall’s price, your guess for spring and the winter costs. It shows which comes out ahead.</li></ul></details>
     <div class="bar"><select id="mYear" style="flex:1 1 140px;width:auto"></select><select id="mGroup" style="flex:1 1 160px;width:auto"></select></div>
     <div id="moneyBody" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
 
   <section data-view="settings" hidden>
     <h2 class="settings-h">Settings</h2>
-    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li>In more than one ranch? Tap the ranch name to switch. Each ranch keeps its own copy on this phone.</li><li><b>Swap with nearby phone</b> passes changes between phones when there’s no signal.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
+    <details class="help"><summary><svg class="i" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="6" r="1.3" fill="currentColor"/><path d="M10 9v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>How this page works</summary><ul><li>Set up this phone, share the ranch, and see every change.</li><li>Words too small? Pick <b>Bigger</b> or <b>Biggest</b> under <b>Text size</b>.</li><li>In more than one ranch? Tap the ranch name to switch. Each ranch keeps its own copy on this phone.</li><li><b>Swap with nearby phone</b> passes changes between phones when there’s no signal.</li><li><b>Share this ranch</b> shows a QR code another phone scans to join. Choose crew (no prices) or full access.</li><li>Import a spreadsheet, or export one, including the eShepherd file.</li><li><b>Recent changes</b> shows who changed what, and when.</li></ul></details>
     <h2>Ranch &amp; phone setup</h2>
     <div class="card" id="setupCard">
       <div id="ranchLine"></div>
@@ -441,6 +454,11 @@ section[data-view="work"][data-nocollar="1"] .fit-grid{grid-template-columns:1fr
           <div><button class="btn" id="cfg-url-save" type="button">Save sync address</button></div>
         </div>
       </details>
+    </div>
+    <h2>Text size</h2>
+    <div class="card">
+      <div class="small muted">Make everything bigger on this phone. Other phones keep their own size.</div>
+      <div class="seg" id="textSize"><button type="button" data-t="" aria-pressed="true">Normal</button><button type="button" data-t="1" aria-pressed="false" style="font-size:18px">Bigger</button><button type="button" data-t="2" aria-pressed="false" style="font-size:20px">Biggest</button></div>
     </div>
     <h2>No signal?</h2>
     <div class="card">

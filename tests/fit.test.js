@@ -38,7 +38,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.fill('#fq',''); await pg.click('#fitSwitch [data-side=cow]'); await wait(100);
   ok(await pg.isVisible('#fCows') && !(await pg.isVisible('#fCollars')), 'phone shows one list at a time');
   const cowsText = await pg.textContent('#fCows');
-  ok(!cowsText.includes('E5') && !cowsText.includes('C3') && cowsText.includes('A1'), 'calves without a collar and cows with one on are skipped');
+  ok(cowsText.includes('E5') && !cowsText.includes('C3') && cowsText.includes('A1'), 'calves are offered too (every animal wears a collar); animals with one on are skipped');
   // one tap: her collar from last season is picked for her
   await pg.click('#fCows [data-cow=a]'); await wait(100);
   ok((await pg.textContent('#fitPair')).includes('Collar 1001 → Bar 9 A1') && !(await pg.isDisabled('#fitGo')), 'picking a cow picks her collar from last season');
@@ -134,7 +134,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.click('#cUnknown'); await wait(100);
   if(!(await pg.textContent('#uk')).includes('3001')){ await pg.click('#uk [data-skip]'); await wait(100); }
   const ukText = await pg.textContent('#uk');
-  ok(ukText.includes('2 animals have no collar on') && !ukText.includes('E5') && ukText.includes('Bar 7'), 'no group: every group, bulls included, calves and collared animals left out');
+  ok(ukText.includes('3 animals have no collar on') && ukText.includes('Calf Bar 9') && ukText.includes('Bar 7'), 'no group: every group, bulls and calves included, collared animals left out: '+ukText.replace(/\s+/g,' ').slice(0,200));
   await pg.click('#uk [data-skip]'); await wait(100);
   ok(!!(await C('3001')).unknownAt, 'Not sure yet leaves it for another day');
   if(await pg.isVisible('#sheet .x')) await pg.click('#sheet .x');
