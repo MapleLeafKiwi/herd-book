@@ -1504,6 +1504,7 @@ function renderMoney(){
       </tbody></table></div>`:'<div class="small muted">No sales in this period.</div>'}
     </div>
     <div class="card"><b>On hand</b><div class="small muted">${pool.filter(a=>!isGone(a)).length} head on hand · ${money(onHandCost)} paid for those with a purchase price.</div>${died.length?`<div class="small muted">${plural(died.length,'animal')} died${diedCost?` · ${money(diedCost)} paid for ${died.length===1?'it':'them'}`:''}.</div>`:''}</div>
+    <div class="card"><b>Ask your own AI</b><div class="small muted">Copy your herd, sales and costs to paste into ChatGPT, Claude or another AI, to help decide when to sell.</div><div><button type="button" class="btn primary" id="aiBtn">Copy data for AI</button></div></div>
     <div class="card"><b>Sell now or carry over the winter?</b><div class="small muted">Compare selling this fall with feeding them through to spring, using your own prices and costs.</div><div><button type="button" class="btn primary" id="carryBtn">Work it out</button></div></div>
     <div class="card"><div class="bar" style="justify-content:space-between"><b>Expenses</b><button type="button" class="btn primary" id="expAdd">+ Add expense</button></div>
       ${exps.length?`<div class="tablewrap"><table class="mtable"><thead><tr><th>Date</th><th>What</th><th class="r">Amount</th></tr></thead><tbody>${exps.map(x=>`<tr data-exp="${esc(x.id)}"><td>${esc(shortDate(x.date))}</td><td>${esc(x.category||'')}${x.description?' · '+esc(x.description):''}${x.group?` <span class="muted">(${esc(x.group)})</span>`:''}</td><td class="r">${money(x.amount)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="small muted">No expenses in this period.</div>'}
@@ -1514,9 +1515,119 @@ $('#mGroup').addEventListener('change', e=>{ S.mGroup=e.target.value; renderMone
 $('#moneyBody').addEventListener('click', e=>{
   if(e.target.closest('#expAdd')) return openExpense(null);
   if(e.target.closest('#carryBtn')) return openCarry();
+  if(e.target.closest('#aiBtn')) return openAiExport();
   const x=e.target.closest('[data-exp]'); if(x) return openExpense(x.dataset.exp);
   const r=e.target.closest('tr[data-id]'); if(r) openAnimal(r.dataset.id);
 });
+// Copy for AI (Money tab, full access only): everything an outside AI (ChatGPT, Claude…) needs to help decide when to
+// sell, as plain text to paste. Averages are worked out here, exactly, so the AI starts from correct numbers.
+// Nothing is sent anywhere by the app: the user copies it or saves it as a file.
+const AI_ASKS = {
+  sell: 'Help me decide when to sell{G}. Use my sale history to show what I’ve averaged per head by month and year, what keeping them longer has cost me, and when selling has paid best. Ask me for current local prices if you need them.',
+  history: 'Summarise my sale history{G}: average, lowest and highest price per head by month and year, profit per head over the purchase price, and any patterns you can see.',
+  carry: 'Using my numbers below, should I sell{G} now or carry them over the winter? Show the spring price I’d need to break even.',
+  own: ''
+};
+function aiText(o){
+  const F='\n', num=v=>Number(v)||0, has=v=>v!==''&&v!=null&&!isNaN(Number(v)), r0=v=>Math.round(v);
+  const g=o.group, gTxt=g?` the ${g} group`:'', hide=o.hide;
+  const ask = o.ask==='own' ? (o.own||'').trim() : AI_ASKS[o.ask].replace('{G}', gTxt);
+  const csvRow = a => a.map(v=>{ v=String(v??''); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(',');
+  const out=[];
+  out.push(`# Herd Book data${cfg.ranchName&&!hide?' for '+cfg.ranchName:''}, exported ${today()}`);
+  out.push('', '## What I’d like help with', ask || '(Type your question here.)');
+  out.push('', '## About the ranch');
+  if(String(o.about||'').trim()) out.push(String(o.about).trim());
+  out.push(`- Prices are in dollars as entered in Herd Book. Weights are in lb. Dates are year-month-day.`, `- Gestation used for calving dates: ${gestation()} days.`);
+  // herd on hand by group
+  const live=onHand().filter(a=>!g || a.group===g), byG=new Map();
+  live.forEach(a=>{ const k=a.group||'No group'; if(!byG.has(k)) byG.set(k,[]); byG.get(k).push(a); });
+  out.push('', `## Herd on hand today${g?' ('+g+')':''}`);
+  out.push(csvRow(['group','head','cows','heifers','bulls','steers','calves','missing','avg_purchase_price','purchased_from','purchased_to','avg_latest_weight_lb','weighed_head','pregnant','open','exposed','calving_from','calving_to']));
+  [...byG.entries()].sort((x,y)=>x[0].localeCompare(y[0])).forEach(([k,xs])=>{
+    const c=t=>xs.filter(a=>a.kind===t).length, pp=xs.filter(a=>has(a.purchasePrice)), wt=xs.filter(a=>has(a.weight)&&num(a.weight)>0);
+    const pd=xs.map(a=>a.purchaseDate).filter(Boolean).sort(), b=xs.map(a=>breedingFor(a)).filter(Boolean);
+    const win=b.filter(x=>x.from&&(x.status==='pregnant'||x.status==='exposed')), froms=win.map(x=>x.from).sort(), tos=win.map(x=>x.to).sort();
+    out.push(csvRow([k, xs.length, c('cow'), c('heifer'), c('bull'), c('steer'), c('calf'), xs.filter(isMissing).length,
+      pp.length?r0(pp.reduce((t,a)=>t+num(a.purchasePrice),0)/pp.length):'', pd[0]||'', pd[pd.length-1]||'',
+      wt.length?r0(wt.reduce((t,a)=>t+num(a.weight),0)/wt.length):'', wt.length, b.filter(x=>x.status==='pregnant').length, b.filter(x=>x.status==='open').length, b.filter(x=>x.status==='exposed').length, froms[0]||'', tos[tos.length-1]||'']));
+  });
+  if(!live.length) out.push('(none on hand)');
+  // sales, every animal sold
+  const sold=animals().filter(a=>isSold(a) && has(a.salePrice)).sort((a,b)=>(a.saleDate||'').localeCompare(b.saleDate||''));
+  out.push('', '## Every animal sold');
+  out.push(csvRow(['sale_date','type','group','purchase_date','purchase_price','sale_price','profit_over_purchase','days_owned','latest_weight_lb','weighed_date', ...(hide?[]:['tag','brand','buyer'])]));
+  sold.forEach(a=>out.push(csvRow([a.saleDate||'', KIND[a.kind]||'Cow', a.group||'', a.purchaseDate||'', has(a.purchasePrice)?num(a.purchasePrice):'', num(a.salePrice),
+    has(a.purchasePrice)?num(a.salePrice)-num(a.purchasePrice):'', a.purchaseDate&&a.saleDate?daysBetween(a.purchaseDate,a.saleDate):'', has(a.weight)?num(a.weight):'', a.weighedAt||'', ...(hide?[]:[a.vid||'', [a.brand1,a.brand2].filter(Boolean).join(' / '), a.buyer||''])])));
+  if(!sold.length) out.push('(no sales recorded yet)');
+  // sales summary by month
+  const bm=new Map(); sold.forEach(a=>{ const k=String(a.saleDate||'').slice(0,7)||'no date'; if(!bm.has(k)) bm.set(k,[]); bm.get(k).push(a); });
+  if(sold.length){
+    out.push('', '## Sales by month (worked out by Herd Book)');
+    out.push(csvRow(['month','head','avg_price_per_head','lowest','highest','avg_profit_over_purchase','avg_price_per_lb']));
+    [...bm.entries()].sort().forEach(([k,xs])=>{ const p=xs.map(a=>num(a.salePrice)), wp=xs.filter(a=>has(a.purchasePrice)), wl=xs.filter(a=>num(a.weight)>0);
+      out.push(csvRow([k, xs.length, r0(p.reduce((t,v)=>t+v,0)/p.length), Math.min(...p), Math.max(...p),
+        wp.length?r0(wp.reduce((t,a)=>t+num(a.salePrice)-num(a.purchasePrice),0)/wp.length):'', wl.length?(wl.reduce((t,a)=>t+num(a.salePrice)/num(a.weight),0)/wl.length).toFixed(2):''])); });
+  }
+  // deaths
+  const dead=animals().filter(isDead).sort((a,b)=>(a.died||'').localeCompare(b.died||''));
+  if(dead.length){ out.push('', '## Deaths'); out.push(csvRow(['date','type','group','purchase_price']));
+    dead.forEach(a=>out.push(csvRow([a.died, KIND[a.kind]||'Cow', a.group||'', has(a.purchasePrice)?num(a.purchasePrice):'']))); }
+  // costs by year and category
+  const ex=[...S.expenses.values()].filter(x=>!g || !x.group || x.group===g), byYC=new Map();
+  ex.forEach(x=>{ const k=yearOf(x.date)+'|'+(x.category||'Other')+'|'+(x.group||'Whole herd'); byYC.set(k,(byYC.get(k)||0)+num(x.amount)); });
+  [...S.treatments.values()].filter(t=>has(t.cost)).forEach(t=>{ const k=yearOf(t.date)+'|Treatments ('+t.product+')|'+(t.group||'Picked animals'); byYC.set(k,(byYC.get(k)||0)+num(t.cost)); });
+  out.push('', '## Costs by year and category (not counting purchase prices)');
+  out.push(csvRow(['year','category','group','total']));
+  [...byYC.entries()].sort().forEach(([k,v])=>out.push(csvRow([...k.split('|'), r0(v)])));
+  if(!byYC.size) out.push('(no costs recorded)');
+  // purchases by year
+  const pb=new Map(); animals().filter(a=>has(a.purchasePrice)).forEach(a=>{ const y=yearOf(a.purchaseDate)||'no date'; const e=pb.get(y)||{n:0,t:0}; e.n++; e.t+=num(a.purchasePrice); pb.set(y,e); });
+  if(pb.size){ out.push('', '## Purchases by year'); out.push(csvRow(['year','head','total','avg_per_head'])); [...pb.entries()].sort().forEach(([y,e])=>out.push(csvRow([y,e.n,r0(e.t),r0(e.t/e.n)]))); }
+  // carry-over calculator
+  const c=cfg.carry||{};
+  if(['fall','spring','feed','other','rate','death','months'].some(k=>String(c[k]??'').trim()!=='')){
+    out.push('', '## My last “sell now or carry over” numbers');
+    [['fall','Price per head if sold now'],['spring','Expected spring price per head'],['months','Months to carry'],['feed','Feed & care per head per month'],['other','Other winter costs per head'],['rate','Interest rate % a year'],['death','Expected death loss %']]
+      .forEach(([k,l])=>{ if(String(c[k]??'').trim()!=='') out.push(`- ${l}: ${c[k]}`); });
+  }
+  out.push('', '## Notes for you (the AI)', '- These are my own records from Herd Book. It doesn’t know market prices: ask me for current local prices or sale reports if you need them.', '- Please show your working, say how sure you are, and tell me what other information would help.');
+  return out.join(F)+F;
+}
+function openAiExport(){
+  if(!fin()) return;
+  const o={ ask:'sell', own:'', group:S.mGroup||'', hide:true, about:cfg.aiAbout||'' };
+  openSheet(`<div id="ai" style="display:flex;flex-direction:column;gap:12px">
+    <div class="sheet-h"><h2>Copy data for AI</h2><button class="x" type="button" aria-label="Close">×</button></div>
+    <div class="small">Copies your herd, sales and costs as text to paste into ChatGPT, Claude or another AI, with your question at the top. Prices are included, so only paste it into an AI you trust.</div>
+    <div class="card">
+      <b>What do you want help with?</b>
+      <div class="fit-list" id="ai-ask">${[['sell','When to sell'],['history','My sale history'],['carry','Sell now or carry over'],['own','My own question']].map(([k,l])=>`<button type="button" class="gpick" data-ask="${k}" aria-pressed="${k===o.ask}"><b>${l}</b></button>`).join('')}</div>
+      <textarea id="ai-own" placeholder="Type your question" hidden></textarea>
+      <label class="f">Which animals<select id="ai-group"><option value="">Whole herd</option>${allGroupNames().sort((x,y)=>x.localeCompare(y,undefined,{numeric:true})).map(x=>`<option ${x===o.group?'selected':''}>${esc(x)}</option>`).join('')}</select></label>
+      <label class="f">About your operation (optional, kept on this phone)<textarea id="ai-about" placeholder="e.g. We buy heifers in spring, breed them and sell them bred in the fall.">${esc(o.about)}</textarea></label>
+      <label class="check"><input type="checkbox" id="ai-hide" checked> Leave out ranch name, tags, brands and buyers</label>
+    </div>
+    <div class="fab-row"><button type="button" class="btn primary fitgo" id="ai-copy">Copy</button><button type="button" class="btn" id="ai-save">Save as a file</button></div>
+    <div id="ai-msg"></div>
+    <label class="f">What gets copied<textarea id="ai-text" readonly rows="10" class="aitext"></textarea></label>
+  </div>`);
+  const draw=()=>{ $('#ai-text').value=aiText(o); $('#ai-msg').innerHTML=''; };
+  $('#ai-ask').addEventListener('click', e=>{ const b=e.target.closest('[data-ask]'); if(!b) return; o.ask=b.dataset.ask;
+    $('#ai-ask').querySelectorAll('[data-ask]').forEach(x=>x.setAttribute('aria-pressed', x===b)); $('#ai-own').hidden=o.ask!=='own'; if(o.ask==='own') $('#ai-own').focus(); draw(); });
+  $('#ai-own').addEventListener('input', e=>{ o.own=e.target.value; draw(); });
+  $('#ai-group').addEventListener('change', e=>{ o.group=e.target.value; draw(); });
+  $('#ai-about').addEventListener('input', e=>{ o.about=e.target.value; cfg.aiAbout=o.about; LS.set(K.cfg,cfg); draw(); });
+  $('#ai-hide').addEventListener('change', e=>{ o.hide=e.target.checked; draw(); });
+  $('#ai-copy').addEventListener('click', async ()=>{
+    const t=$('#ai-text'); let done=false;
+    try{ await navigator.clipboard.writeText(t.value); done=true; }catch{}
+    if(!done){ try{ t.removeAttribute('readonly'); t.select(); done=document.execCommand('copy'); t.setAttribute('readonly',''); }catch{} }
+    $('#ai-msg').innerHTML = done ? '<div class="notice ok">Copied. Open your AI app and paste it in.</div>' : '<div class="notice warn">This phone wouldn’t copy it. Press and hold the text below, Select all, then Copy. Or tap Save as a file.</div>';
+  });
+  $('#ai-save').addEventListener('click', ()=>saveFile(`herd-for-ai-${today()}.txt`, $('#ai-text').value, 'text/plain'));
+  draw();
+}
 // Sell now or carry over: everything is typed in, nothing is saved to the sheet (the last numbers are kept on this phone).
 function openCarry(){
   if(!fin()) return;

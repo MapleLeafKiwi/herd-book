@@ -46,7 +46,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.screenshot({path:path.join(OUT,'scanrun.png')});
   // fix a Check row: type the number
   await pg.click('#sr-rows .srrow:nth-last-child(4) .srmain');
-  ok(await pg.isVisible('#sr-rows .srbig') && await pg.isVisible('[data-srtype]') && await pg.isVisible('[data-srrm]'), 'tapping a Check row shows the photo, a box to type it and Remove');
+  ok(await pg.locator('#sr-rows .srbig').count()===1 && await pg.isVisible('[data-srtype]') && await pg.isVisible('[data-srrm]'), 'tapping a Check row shows the photo, a box to type it and Remove');
   await pg.fill('[data-srtype]','103'); await pg.click('[data-sruse]'); await wait(100);
   ok((await rowsText())[3].startsWith('ok:4') && (await rowsText())[3].includes('103'), 'fixed by typing the number');
   // remove the no-number photo
