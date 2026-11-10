@@ -1764,7 +1764,10 @@ function mapStep(sheets, names, sheetName){
     <b>Match the columns</b> <span class="small muted">${body.length} rows</span>
     <div class="grid2">${F.map(([k,l,al])=>`<label class="f">${esc(l)}<select data-map="${k}">${opts(guess(al))}</select></label>`).join('')}</div>
     <div class="grid2">
-      <label class="f">Match existing animals by<select id="imp-match"><option value="collar">Collar #</option><option value="eid">EID / RFID</option><option value="vid">Visual tag</option><option value="none">Don’t match (always add new)</option></select></label>
+      <label class="f">Match existing animals by<select id="imp-match">${(()=>{ const has=k=>{ const f=F.find(x=>x[0]===k); return f && guess(f[2])>=0; };
+        // match on the ear tag first (how the crew tells animals apart), then EID, then collar; eShepherd files by collar
+        const def = isES ? 'collar' : has('vid') ? 'vid' : has('eid') ? 'eid' : has('collar') ? 'collar' : 'none';
+        return [['vid','Visual tag'],['eid','EID / RFID'],['collar','Collar #'],['none','Don’t match (always add new)']].map(([v,l])=>`<option value="${v}" ${v===def?'selected':''}>${l}</option>`).join(''); })()}</select></label>
       <label class="f">Dates like 03/04/2025 mean<select id="imp-order"><option value="mdy">Month/Day/Year</option><option value="dmy" ${isES?'selected':''}>Day/Month/Year</option></select></label>
     </div>
     <label class="check"><input id="imp-onlysold" type="checkbox"> Include animals that are already sold</label>

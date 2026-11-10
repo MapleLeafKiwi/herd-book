@@ -92,6 +92,14 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
   await pg.click('#selBtn'); await pg.click('#groupChips [data-g=""]'); await pg.click('#selAll'); await pg.click('#selMove'); await pg.click('#mv .gpick[data-g=""]'); await pg.click('#mv-go'); await wait(200);
   ok(!(await pg.textContent('#groupChips')).includes('No group'), 'no No group chip when none of the cattle are grouped');
+  // importing a sheet with only Tag and Group updates the animals already in the book, matched by tag
+  const X=require('xlsx'); const wb=X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Tag','Group'],['A1','Imported'],['A2','Imported'],['Z9','Imported']]), 'U');
+  const UF=path.join(OUT,'tag-update.xlsx'); X.writeFile(wb, UF); const n0=await pg.evaluate(()=>window.__herdbook.state.animals.size);
+  await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pg.click('[data-open-import] >> nth=0'); await pg.setInputFiles('#imp-file', UF); await pg.waitForSelector('#imp-go');
+  ok(await pg.inputValue('#imp-match')==='vid' && (await pg.textContent('#imp-preview')).includes('1 new animals, 2 existing animals updated'), 'import with a Tag column matches existing animals by tag');
+  await pg.click('#imp-go'); await wait(300);
+  ok(await G('a1')==='Imported' && await pg.evaluate(()=>window.__herdbook.state.animals.size)===n0+1, 'tag-matched rows update in place, no duplicates');
   await pg.screenshot({path:path.join(OUT,'groups.png')});
   await browser.close(); srv.close();
 })().catch(e=>{ console.error(e); process.exit(1); });
