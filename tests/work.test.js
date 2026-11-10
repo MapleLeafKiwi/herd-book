@@ -28,7 +28,7 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
 
   // ---- tabs and the Settings gear ----
   const navText = (await pg.locator('nav a:not([hidden])').allTextContents()).map(t=>t.trim().toLowerCase()).join(' · ');
-  ok(navText==='herd · work cattle · collars · breeding · health · money', 'tabs: '+navText);
+  ok(navText==='herd · work cattle · collars · breeding · health · financials', 'tabs: '+navText);
   ok(await pg.getAttribute('#gearBtn','aria-label')==='Settings', 'gear button labelled Settings');
   await pg.click('#gearBtn'); await wait(100);
   ok(await pg.isVisible('section[data-view=settings]') && (await pg.textContent('section[data-view=settings] .settings-h'))==='Settings' && await pg.isVisible('#setupCard'), 'gear opens Settings with ranch and phone setup');

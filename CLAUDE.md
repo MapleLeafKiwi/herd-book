@@ -30,7 +30,7 @@ When you hand Matthew a new `Code.gs` to paste, put the real sign-up code in tha
 
 ## Tabs
 
-Herd · Work Cattle · Collars · Breeding · Health · Money (full access only), plus a gear at the right of the header for **Settings** (`#settings`; old `#log` links land there): ranch and phone setup, share, swap with nearby phone, import/export, change log. App text says "Settings ›", never "Log ›".
+Herd · Work Cattle · Collars · Breeding · Health · Financials (`#money`, full access only; called Money in the code), plus a gear at the right of the header for **Settings** (`#settings`; old `#log` links land there): ranch and phone setup, share, swap with nearby phone, import/export, change log. App text says "Settings ›", never "Log ›".
 
 ## Features (where to look in app.js)
 

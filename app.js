@@ -1467,7 +1467,7 @@ $('#gestBtn').addEventListener('click', ()=>{
 // ---------- money (full access only) ----------
 const EXP_CATS = ['Extra feed','Salt & mineral','Pasture lease / rent','Bull rental','Interest','Vaccines & vet','Trucking','Fees & commissions','Labour','Fuel','Repairs','Equipment','Other'];
 function renderMoney(){
-  if(!fin()){ $('#moneyBody').innerHTML='<div class="empty"><strong>Not available on this phone</strong>Money is only shown on phones with full access.</div>'; return; }
+  if(!fin()){ $('#moneyBody').innerHTML='<div class="empty"><strong>Not available on this phone</strong>Financials are only shown on phones with full access.</div>'; return; }
   const years=[...new Set([...animals().flatMap(a=>[yearOf(a.purchaseDate),yearOf(a.saleDate)]), ...[...S.expenses.values()].map(x=>yearOf(x.date)), ...[...S.treatments.values()].map(t=>yearOf(t.date))].filter(Boolean))].sort().reverse();
   const ySel=$('#mYear'), gSel=$('#mGroup');
   const yv=S.mYear||'', gv=S.mGroup||'';
@@ -1519,7 +1519,7 @@ $('#moneyBody').addEventListener('click', e=>{
   const x=e.target.closest('[data-exp]'); if(x) return openExpense(x.dataset.exp);
   const r=e.target.closest('tr[data-id]'); if(r) openAnimal(r.dataset.id);
 });
-// Copy for AI (Money tab, full access only): everything an outside AI (ChatGPT, Claude…) needs to help decide when to
+// Copy for AI (Financials tab, full access only): everything an outside AI (ChatGPT, Claude…) needs to help decide when to
 // sell, as plain text to paste. Averages are worked out here, exactly, so the AI starts from correct numbers.
 // Nothing is sent anywhere by the app: the user copies it or saves it as a file.
 const AI_ASKS = {
