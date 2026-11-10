@@ -87,7 +87,7 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
   const F = await phone('Scan', {start:'Scan Ranch'}); const pf=F.page;
   pf.on('console', m=>{ if(m.type()==='error') console.log('console:', m.text()); }); pf.on('requestfailed', r=>console.log('failed:', r.url().slice(0,90)));
   await pf.goto('http://localhost:8765/#herd'); await wait(200);
-  await pf.click('[data-open-import] >> nth=0'); await pf.setInputFiles('#imp-file',path.join(FIX,'eshepherd-sample.xlsx')); await pf.waitForSelector('#imp-go'); await pf.click('#imp-go'); await wait(2500);
+  await pf.click('[data-open-import] >> nth=0'); await pf.setInputFiles('#imp-file',path.join(FIX,'eshepherd-sample.xlsx')); await pf.waitForSelector('#imp-go'); await pf.evaluate(()=>{ const b=document.querySelector('[data-q=fitted] [data-v=no]'); if(b) b.click(); }); await pf.click('#imp-go'); await wait(2500);
   // new cow with no collar, fit by photo
   await pf.click('#addBtn'); await pf.fill('#a-b1','Lazy H'); await pf.selectOption('#a-group','__new'); await pf.fill('#a-gnew','Group 9'); await pf.fill('#a-vid','V77'); await pf.click('#af button[type=submit]'); await wait(300);
   ok((await pf.textContent('#herdList')).includes('V77'), 'herd list shows the visual tag');

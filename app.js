@@ -1770,10 +1770,27 @@ function mapStep(sheets, names, sheetName){
         return [['vid','Visual tag'],['eid','EID / RFID'],['collar','Collar #'],['none','Don’t match (always add new)']].map(([v,l])=>`<option value="${v}" ${v===def?'selected':''}>${l}</option>`).join(''); })()}</select></label>
       <label class="f">Dates like 03/04/2025 mean<select id="imp-order"><option value="mdy">Month/Day/Year</option><option value="dmy" ${isES?'selected':''}>Day/Month/Year</option></select></label>
     </div>
+    <div id="imp-collars"></div>
     <label class="check"><input id="imp-onlysold" type="checkbox"> Include animals that are already sold</label>
     <div id="imp-preview" class="small"></div>
     <button class="btn primary" type="button" id="imp-go">Import</button></div>`;
   const s=$('#imp-sheet'); s && s.addEventListener('change', e=>mapStep(sheets, names, e.target.value));
+  // When the sheet has collar numbers, ask whether to add them to the collar list and (with no Collar fitted column) whether they're on.
+  const impQ={ add:true, fitted:null };
+  const collarQs = () => {
+    const ci=Number(($('[data-map="collar"]')||{}).value), fi=Number(($('[data-map="collarOn"]')||{}).value);
+    const nums=ci>=0 ? [...new Set(body.map(r=>String(r[ci]??'').trim()).filter(Boolean))] : [];
+    const el=$('#imp-collars'); if(!nums.length){ el.innerHTML=''; return {need:false}; }
+    const fresh=nums.filter(n=>!collarFor(n)).length, askFit=!(fi>=0);
+    el.innerHTML = `<div class="card impq">
+      <b>This sheet has ${plural(nums.length,'collar')}.</b>
+      ${fresh?`<div>Add ${fresh===nums.length?'them':`the ${fresh} new ones`} to your collar list?</div><div class="seg" data-q="add"><button type="button" data-v="yes" aria-pressed="${impQ.add}">Yes, add them</button><button type="button" data-v="no" aria-pressed="${!impQ.add}">No</button></div>`:'<div class="small muted">They’re all in your collar list already.</div>'}
+      ${askFit?`<div>Are these collars on the animals now?</div><div class="seg" data-q="fitted"><button type="button" data-v="yes" aria-pressed="${impQ.fitted==='yes'}">Yes, fitted</button><button type="button" data-v="no" aria-pressed="${impQ.fitted==='no'}">No, not fitted yet</button></div>`:'<div class="small muted">Fitted or not comes from your Collar fitted column.</div>'}
+    </div>`;
+    return {need: askFit && !impQ.fitted, fresh};
+  };
+  $('#imp-collars').addEventListener('click', e=>{ const b=e.target.closest('[data-q] [data-v]'); if(!b) return; const q=b.closest('[data-q]').dataset.q;
+    if(q==='add') impQ.add=b.dataset.v==='yes'; else impQ.fitted=b.dataset.v; prev(); });
   const plan = () => {
     const map={}; document.querySelectorAll('[data-map]').forEach(el=>{ const i=Number(el.value); if(i>=0) map[el.dataset.map]=i; });
     const by=$('#imp-match').value, order=$('#imp-order').value, incl=$('#imp-onlysold').checked;
@@ -1783,10 +1800,12 @@ function mapStep(sheets, names, sheetName){
       const v={}; Object.entries(map).forEach(([k,i])=>{ let x=r[i]; if(x==null) return;
         if(k==='birthDate'||k==='purchaseDate'||k==='saleDate') x=toISO(x, order);
         else if(k==='purchasePrice'||k==='salePrice'){ x=parseMoney(x instanceof Date?'':x); if(x===null) x=''; }
-        else if(k==='collarOn') x=/^(y|yes|true|1|fitted|x)$/i.test(String(x).trim());
+        else if(k==='collarOn'){ const t=String(x).trim(); x = t==='' ? '' : !/^(n|no|false|0|not\s*fitted|unfitted|off)$/i.test(t); }
         else if(k==='kind') x=kindOf(x);
         else x=(x instanceof Date?x.toLocaleDateString('en-CA'):String(x)).trim();
         if(x!=='' && x!==false) v[k]=x; else if(k==='collarOn' && x===false) v[k]=false; });
+      // collars with no Collar fitted column: the answer to "Are these collars on the animals now?"
+      if(v.collar && v.collarOn===undefined){ if(map.collarOn!=null) v.collarOn=true; else if(impQ.fitted) v.collarOn = impQ.fitted==='yes'; }
       if(!v.brand1 && !v.vid && !v.eid && !(v.collar && (v.group||v.notes||v.kind||v.breed))){ out.skip++; return; }
       const key = by!=='none' ? String(v[by]||'').trim().toLowerCase() : '';
       const hit = key && index[key];
@@ -1795,14 +1814,18 @@ function mapStep(sheets, names, sheetName){
     });
     return out;
   };
-  const prev = () => { const p=plan(); $('#imp-preview').innerHTML = `<b>${p.add.length}</b> new animals, <b>${p.upd.length}</b> existing animals updated${p.skip?`, ${p.skip} rows skipped (no collar, brand or tag)`:''}.`; };
+  const prev = () => { const q=collarQs(), p=plan(); $('#imp-go').disabled=q.need;
+    $('#imp-preview').innerHTML = q.need ? '<span class="warn-text">Answer the collar question above first.</span>' : `<b>${p.add.length}</b> new animals, <b>${p.upd.length}</b> existing animals updated${p.skip?`, ${p.skip} rows skipped (no collar, brand or tag)`:''}.`; };
   $('#imp-map').addEventListener('change', prev); prev();
   $('#imp-go').addEventListener('click', ()=>{
     const p=plan(); const now=Date.now();
     p.add.forEach(v=>outbox.push({op:'set', path:'animals/'+rid(), data:{kind:'cow', collarOn:false, ...v, kind:v.kind||'cow', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}));
     p.upd.forEach(([a,ch])=>outbox.push({op:'update', path:'animals/'+a.id, data:{...ch, updatedAt:now, updatedBy:me()}, base:baseOf('animals/'+a.id, ch), t:now}));
+    // collar numbers from the sheet go into the collar list too (serials of 6+ digits double as the eShepherd neckband)
+    const newCollars=!impQ.add ? [] : [...new Set(p.add.concat(p.upd.map(u=>u[1])).map(v=>String(v.collar||'').trim()).filter(Boolean))].filter(n=>!collarFor(n));
+    newCollars.forEach(n=>outbox.push({op:'set', path:'collars/'+cid(n), data:{number:n, neckband:/^\d{6,}$/.test(n)?n:'', note:'', status:'ok', createdAt:now, updatedAt:now, updatedBy:me()}, t:now}));
     saveOutbox();
-    logChange('import','import',`Spreadsheet import: ${p.add.length} added, ${p.upd.length} updated`,'imported',[]);
+    logChange('import','import',`Spreadsheet import: ${p.add.length} added, ${p.upd.length} updated${newCollars.length?`, ${newCollars.length} collars added to the list`:''}`,'imported',[]);
     closeSheet(); toast(`Imported: ${p.add.length} added, ${p.upd.length} updated`);
   });
 }

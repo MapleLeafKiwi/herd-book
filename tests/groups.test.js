@@ -98,8 +98,27 @@ const mirror = { rev:0, history:[], exposures:{}, treatments:{}, expenses:{}, pr
   await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
   await pg.click('[data-open-import] >> nth=0'); await pg.setInputFiles('#imp-file', UF); await pg.waitForSelector('#imp-go');
   ok(await pg.inputValue('#imp-match')==='vid' && (await pg.textContent('#imp-preview')).includes('1 new animals, 2 existing animals updated'), 'import with a Tag column matches existing animals by tag');
-  await pg.click('#imp-go'); await wait(300);
+  await pg.evaluate(()=>{ const b=document.querySelector('[data-q=fitted] [data-v=no]'); if(b) b.click(); }); await pg.click('#imp-go'); await wait(300);
   ok(await G('a1')==='Imported' && await pg.evaluate(()=>window.__herdbook.state.animals.size)===n0+1, 'tag-matched rows update in place, no duplicates');
+  // importing tags with collar serials: the collar is fitted to that animal and goes in the collar list
+  const wb2=X.utils.book_new(); X.utils.book_append_sheet(wb2, X.utils.aoa_to_sheet([['Tag','Brand','Collar','Collar fitted'],['C1','XX','0406112301',''],['C2','XX','0406112302','No'],['C3','XX','0406112303','']]), 'C');
+  const CF2=path.join(OUT,'tag-collar.xlsx'); X.writeFile(wb2, CF2);
+  await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pg.click('[data-open-import] >> nth=0'); await pg.setInputFiles('#imp-file', CF2); await pg.waitForSelector('#imp-go'); await pg.evaluate(()=>{ const b=document.querySelector('[data-q=fitted] [data-v=no]'); if(b) b.click(); }); await pg.click('#imp-go'); await wait(300);
+  const byVid = v => pg.evaluate(v=>[...window.__herdbook.state.animals.values()].find(a=>a.vid===v), v);
+  ok((await byVid('C1')).collar==='0406112301' && (await byVid('C1')).collarOn===true && (await byVid('C3')).collarOn===true, 'imported collar serials are fitted to their animals');
+  ok((await byVid('C2')).collarOn===false, 'a Collar fitted column saying No keeps it not fitted');
+  // no Collar fitted column: it asks, and Import waits for the answer; No adds no collars to the list
+  const wb3=X.utils.book_new(); X.utils.book_append_sheet(wb3, X.utils.aoa_to_sheet([['Tag','Brand','Collar'],['D1','XX','0406112311'],['D2','XX','0406112312']]), 'D');
+  const CF3=path.join(OUT,'tag-collar-ask.xlsx'); X.writeFile(wb3, CF3); await pg.evaluate(()=>{ document.querySelector('#toast').hidden=true; });
+  await pg.click('[data-open-import] >> nth=0'); await pg.setInputFiles('#imp-file', CF3); await pg.waitForSelector('#imp-go');
+  ok((await pg.textContent('#imp-collars')).includes('This sheet has 2 collars') && (await pg.textContent('#imp-collars')).includes('Are these collars on the animals now?') && await pg.isDisabled('#imp-go'), 'collars in the sheet: asks to add them and whether they’re fitted, Import waits');
+  await pg.click('[data-q=fitted] [data-v=yes]'); await pg.click('[data-q=add] [data-v=no]');
+  ok(!(await pg.isDisabled('#imp-go')), 'Import is ready once answered'); await pg.click('#imp-go'); await wait(300);
+  ok((await byVid('D1')).collarOn===true && !(await pg.evaluate(()=>window.__herdbook.state.collars.has('c-0406112311'))), 'answered Yes, fitted and No to the list: fitted, collar list unchanged');
+  await pg.goto('http://localhost:8767/#collars'); await wait(200);
+  ok((await pg.textContent('#collarList')).includes('0406112301') && /Fitted · 2/.test(await pg.textContent('#cChips')) && !(await pg.textContent('#cWarn')).includes('0406112301'), 'the collars go into the collar list, showing as Fitted');
+  await pg.goto('http://localhost:8767/#herd'); await wait(200);
   await pg.screenshot({path:path.join(OUT,'groups.png')});
   await browser.close(); srv.close();
 })().catch(e=>{ console.error(e); process.exit(1); });
